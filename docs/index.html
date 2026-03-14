@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=League+Spartan:wght@700&family=Quicksand:wght@400;600;700&display=swap');
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: 'Quicksand', 'Nunito', sans-serif;
+    color: #2D2D2D;
+    background: #FFF8F0;
+    line-height: 1.6;
+    padding: 40px 20px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-family: 'League Spartan', 'Arial Black', sans-serif;
+    color: #1B3A4B;
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    color: #2AAFAF;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 32px;
+  }
+
+  .prereqs {
+    background: #E8DFD0;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+  }
+
+  .prereqs h3 {
+    font-family: 'League Spartan', sans-serif;
+    color: #1B3A4B;
+    margin-bottom: 8px;
+    font-size: 18px;
+  }
+
+  .prereqs ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .prereqs li {
+    padding: 4px 0;
+    padding-left: 24px;
+    position: relative;
+  }
+
+  .prereqs li:before {
+    content: "✓";
+    color: #2AAFAF;
+    font-weight: 700;
+    position: absolute;
+    left: 0;
+  }
+
+  .step {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border-left: 4px solid #2AAFAF;
+  }
+
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .step-number {
+    background: #2AAFAF;
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .step-title {
+    font-family: 'League Spartan', sans-serif;
+    color: #1B3A4B;
+    font-size: 20px;
+  }
+
+  .step p {
+    margin-bottom: 12px;
+  }
+
+  .step ol {
+    padding-left: 20px;
+    margin-bottom: 12px;
+  }
+
+  .step ol li {
+    padding: 6px 0;
+  }
+
+  .code-block {
+    background: #1B3A4B;
+    color: #88C9A1;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: 'Source Code Pro', Consolas, monospace;
+    font-size: 14px;
+    margin: 12px 0;
+    overflow-x: auto;
+    word-break: break-all;
+  }
+
+  .screenshot-placeholder {
+    background: #E8DFD0;
+    border: 2px dashed #2AAFAF;
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+    color: #888;
+    font-style: italic;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+
+  .tip {
+    background: #E07A5F;
+    color: white;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+
+  .tip strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .success {
+    background: #88C9A1;
+    color: #1B3A4B;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-weight: 600;
+  }
+
+  .tools-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 12px 0;
+  }
+
+  .tool-item {
+    background: #FFF8F0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  .tool-item strong {
+    color: #2AAFAF;
+  }
+
+  .time-badge {
+    background: #2AAFAF;
+    color: white;
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+
+  .footer {
+    text-align: center;
+    margin-top: 40px;
+    padding: 20px;
+    color: #888;
+    font-size: 14px;
+  }
+
+  .footer a {
+    color: #2AAFAF;
+    text-decoration: none;
+  }
+
+  .troubleshoot {
+    background: #FFF8F0;
+    border: 1px solid #E8DFD0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 24px;
+  }
+
+  .troubleshoot h3 {
+    font-family: 'League Spartan', sans-serif;
+    color: #1B3A4B;
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+
+  .troubleshoot p {
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .troubleshoot strong {
+    color: #E07A5F;
+  }
+</style>
+</head>
+<body>
+
+<h1>Connect Claude AI to Hospitable</h1>
+<p class="subtitle">Free setup guide. 6 steps. About 15 minutes.</p>
+
+<div class="prereqs">
+  <h3>What you need before starting</h3>
+  <ul>
+    <li>A Hospitable account with API access</li>
+    <li>A Claude account at claude.ai (free or paid)</li>
+    <li>A Railway account at railway.com (free signup, ~$5/mo)</li>
+  </ul>
+</div>
+
+<!-- STEP 1 -->
+<div class="step">
+  <div class="step-header">
+    <div class="step-number">1</div>
+    <div class="step-title">Get Your Hospitable Token <span class="time-badge">2 min</span></div>
+  </div>
+  <p>This token lets the server access your Hospitable data. Think of it like a password just for the API.</p>
+  <ol>
+    <li>Go to <strong>my.hospitable.com</strong></li>
+    <li>Click <strong>Apps</strong> in the left sidebar</li>
+    <li>Click <strong>API access</strong></li>
+    <li>Click <strong>Access tokens</strong></li>
+    <li>Click <strong>+ Add new</strong></li>
+    <li>Select <strong>Read and Write</strong> permissions</li>
+    <li>Enter your password and confirm</li>
+    <li>Copy the token and save it somewhere (you'll need it in Step 4)</li>
+  </ol>
+  <div class="screenshot-placeholder">Screenshot: Hospitable token creation page</div>
+  <div class="tip">
+    <strong>Heads up:</strong> This token expires after about 1 year. If things stop working later, just come back and generate a new one.
+  </div>
+</div>
+
+<!-- STEP 2 -->
+<div class="step">
+  <div class="step-header">
+    <div class="step-number">2</div>
+    <div class="step-title">Create a Railway Account <span class="time-badge">2 min</span></div>
+  </div>
+  <p>Railway is where your server will run. It stays on 24/7 so you can use Hospitable from Claude anytime, on any device.</p>
+  <ol>
+    <li>Go to <strong>railway.com</strong></li>
+    <li>Click <strong>Sign Up</strong> (GitHub login is fastest)</li>
+    <li>You may need to add a credit card for the Hobby plan (~$5/mo)</li>
+  </ol>
+  <div class="screenshot-placeholder">Screenshot: Railway signup page</div>
+</div>
+
+<!-- STEP 3 -->
+<div class="step">
+  <div class="step-header">
+    <div class="step-number">3</div>
+    <div class="step-title">Deploy the Server <span class="time-badge">3 min</span></div>
+  </div>
+  <p>This copies the server code to Railway and starts it up.</p>
+  <ol>
+    <li>In Railway, click <strong>New Project</strong></li>
+    <li>Click <strong>Deploy from GitHub Repo</strong></li>
+    <li>Paste this URL:</li>
+  </ol>
+  <div class="code-block">https://github.com/FBRMike/hospitable-mcp</div>
+  <ol start="4">
+    <li>Wait about 30 seconds for the build to finish</li>
+  </ol>
+  <div class="screenshot-placeholder">Screenshot: Railway "Deploy from GitHub Repo" dialog</div>
+</div>
+
+<!-- STEP 4 -->
+<div class="step">
+  <div class="step-header">
+    <div class="step-number">4</div>
+    <div class="step-title">Configure the Server <span class="time-badge">5 min</span></div>
+  </div>
+  <p>Three quick settings in the Railway dashboard.</p>
+
+  <p><strong>A) Add your Hospitable token:</strong></p>
+  <ol>
+    <li>Click on your service in the Railway dashboard</li>
+    <li>Click the <strong>Variables</strong> tab</li>
+    <li>Click <strong>+ New Variable</strong></li>
+    <li>Name: <strong>HOSPITABLE_PAT</strong></li>
+    <li>Value: paste your token from Step 1</li>
+    <li>Click <strong>Add</strong></li>
+  </ol>
+  <div class="screenshot-placeholder">Screenshot: Railway Variables tab with HOSPITABLE_PAT</div>
+
+  <p><strong>B) Set the start command:</strong></p>
+  <ol>
+    <li>Click the <strong>Settings</strong> tab</li>
+    <li>Scroll down to the <strong>Deploy</strong> section</li>
+    <li>Click <strong>+ Start Command</strong></li>
+    <li>Type exactly:</li>
+  </ol>
+  <div class="code-block">python server.py --http</div>
+  <div class="screenshot-placeholder">Screenshot: Railway start command field</div>
+
+  <p><strong>C) Enable public access:</strong></p>
+  <ol>
+    <li>Still in Settings, scroll to <strong>Networking</strong></li>
+    <li>Under Public Networking, click <strong>Generate Domain</strong></li>
+    <li>You'll get a URL like: <em>your-service-production-xxxx.up.railway.app</em></li>
+    <li>Copy this URL. You'll need it next.</li>
+  </ol>
+  <div class="screenshot-placeholder">Screenshot: Railway generated domain URL</div>
+
+  <p>Click <strong>Deploy</strong> at the bottom to apply all changes. Wait for the deployment to show <strong>ACTIVE</strong> in the Deployments tab.</p>
+</div>
+
+<!-- STEP 5 -->
+<div class="step">
+  <div class="step-header">
+    <div class="step-number">5</div>
+    <div class="step-title">Connect to Claude <span class="time-badge">2 min</span></div>
+  </div>
+  <p>This is the last step. You're telling Claude where to find your Hospitable server.</p>
+  <ol>
+    <li>Go to <strong>claude.ai</strong> and log in</li>
+    <li>Click <strong>Settings</strong> (bottom left corner)</li>
+    <li>Click <strong>Connectors</strong></li>
+    <li>Scroll down and click <strong>Add custom connector</strong></li>
+    <li>Name: <strong>Hospitable</strong></li>
+    <li>URL: paste your Railway URL from Step 4C, then add <strong>/sse</strong> at the end</li>
+  </ol>
+  <div class="code-block">https://your-service-production-xxxx.up.railway.app/sse</div>
+  <ol start="7">
+    <li>Click <strong>Add</strong></li>
+    <li>Find Hospitable in the list and click <strong>Connect</strong></li>
+  </ol>
+  <div class="success">If the button changes from "Connect" to "Configure", you're connected!</div>
+  <div class="screenshot-placeholder">Screenshot: Claude.ai custom connector dialog + connected state</div>
+</div>
+
+<!-- STEP 6 -->
+<div class="step">
+  <div class="step-header">
+    <div class="step-number">6</div>
+    <div class="step-title">Test It <span class="time-badge">1 min</span></div>
+  </div>
+  <p>Open a new chat in Claude and try:</p>
+  <div class="code-block" style="color: white; background: #2D2D2D;">Use the Hospitable tools to get my account info</div>
+  <p>Claude should respond with your Hospitable account details. If it works, try these:</p>
+  <div class="tools-grid">
+    <div class="tool-item"><strong>Check-ins:</strong> "Show me upcoming check-ins"</div>
+    <div class="tool-item"><strong>Reviews:</strong> "What reviews came in this month?"</div>
+    <div class="tool-item"><strong>Messages:</strong> "Pull up guest messages for [property]"</div>
+    <div class="tool-item"><strong>Calendar:</strong> "What's my July calendar look like?"</div>
+    <div class="tool-item"><strong>Pricing:</strong> "Update pricing to $300/night for July 4th"</div>
+    <div class="tool-item"><strong>Properties:</strong> "List all my properties"</div>
+  </div>
+</div>
+
+<!-- TROUBLESHOOTING -->
+<div class="troubleshoot">
+  <h3>Troubleshooting</h3>
+  <p><strong>"Connect" button doesn't change to "Configure":</strong> Make sure your Railway deployment shows "ACTIVE" (not crashed). Make sure you added /sse to the end of the URL. Make sure the start command is exactly: python server.py --http</p>
+  <p><strong>Railway deployment keeps crashing:</strong> Check that HOSPITABLE_PAT is set correctly in Variables with no extra spaces.</p>
+  <p><strong>Claude can't find Hospitable tools:</strong> Go to Settings, Connectors, and verify Hospitable shows "Configure." Start a new chat (tools don't appear mid-conversation).</p>
+  <p><strong>Token expired / 401 errors:</strong> Generate a new PAT at my.hospitable.com and update the HOSPITABLE_PAT variable in Railway. It'll auto-redeploy.</p>
+</div>
+
+<div class="footer">
+  <p>Built by <a href="https://breezybeachstays.com">Breezy Beach Stays</a></p>
+  <p>Open source at <a href="https://github.com/FBRMike/hospitable-mcp">github.com/FBRMike/hospitable-mcp</a></p>
+</div>
+
+</body>
+</html>
