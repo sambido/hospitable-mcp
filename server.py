@@ -44,7 +44,8 @@ logger = logging.getLogger("hospitable-mcp")
 #   python server.py --http --port 9000  -> HTTP on custom port
 
 HTTP_MODE = "--http" in sys.argv
-HTTP_PORT = 8000
+# Railway (and most PaaS) set PORT in the environment; fall back to --port arg or 8000
+HTTP_PORT = int(os.environ.get("PORT", 8000))
 if "--port" in sys.argv:
     try:
         HTTP_PORT = int(sys.argv[sys.argv.index("--port") + 1])
@@ -551,9 +552,7 @@ async def get_account_info() -> str:
 if __name__ == "__main__":
     if HTTP_MODE:
         logger.info(f"Starting Hospitable MCP server in HTTP mode on port {HTTP_PORT}")
-        import uvicorn
-        app = mcp.sse_app()
-        uvicorn.run(app, host="0.0.0.0", port=HTTP_PORT)
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=HTTP_PORT)
     else:
         logger.info("Starting Hospitable MCP server in STDIO mode")
         mcp.run()
