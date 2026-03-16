@@ -310,13 +310,17 @@
   </div>
   <p>Three quick settings in the Railway dashboard.</p>
 
-  <p><strong>A) Add your Hospitable token:</strong></p>
+  <p><strong>A) Add your environment variables:</strong></p>
   <ol>
     <li>Click on your service in the Railway dashboard</li>
     <li>Click the <strong>Variables</strong> tab</li>
     <li>Click <strong>+ New Variable</strong></li>
     <li>Name: <strong>HOSPITABLE_PAT</strong></li>
     <li>Value: paste your token from Step 1</li>
+    <li>Click <strong>Add</strong></li>
+    <li>Click <strong>+ New Variable</strong> again</li>
+    <li>Name: <strong>PORT</strong></li>
+    <li>Value: <strong>8000</strong></li>
     <li>Click <strong>Add</strong></li>
   </ol>
 
@@ -333,6 +337,7 @@
   <ol>
     <li>Still in Settings, scroll to <strong>Networking</strong></li>
     <li>Under Public Networking, click <strong>Generate Domain</strong></li>
+    <li>If Railway asks for a port, leave it as the default or enter <strong>8000</strong></li>
     <li>You'll get a URL like: <em>your-service-production-xxxx.up.railway.app</em></li>
     <li>Copy this URL. You'll need it next.</li>
   </ol>
