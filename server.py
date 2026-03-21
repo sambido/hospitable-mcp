@@ -20,8 +20,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
+import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 # ---------------------------------------------------------------------------
 # Config
@@ -29,6 +32,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 API_BASE = "https://public.api.hospitable.com/v2"
 PAT = os.environ.get("HOSPITABLE_PAT", "")
+MCP_API_KEY = os.environ.get("MCP_API_KEY", "")
 DEFAULT_TIMEOUT = 30.0
 PER_PAGE = 50
 
@@ -549,10 +553,29 @@ async def get_account_info() -> str:
 # Run
 # ---------------------------------------------------------------------------
 
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Require a Bearer token matching MCP_API_KEY on all HTTP requests."""
+    async def dispatch(self, request, call_next):
+        if not MCP_API_KEY:
+            # No key configured — allow all (useful for local testing)
+            return await call_next(request)
+        auth = request.headers.get("Authorization", "")
+        token = auth.removeprefix("Bearer ").strip()
+        if token != MCP_API_KEY:
+            return Response("Unauthorized", status_code=401)
+        return await call_next(request)
+
+
 if __name__ == "__main__":
     if HTTP_MODE:
         logger.info(f"Starting Hospitable MCP server in HTTP mode on port {HTTP_PORT}")
-        mcp.run(transport="streamable-http", host="0.0.0.0", port=HTTP_PORT)
+        if MCP_API_KEY:
+            logger.info("API key authentication enabled")
+        else:
+            logger.warning("MCP_API_KEY not set — running without authentication")
+        app = mcp.streamable_http_app()
+        app.add_middleware(APIKeyMiddleware)
+        uvicorn.run(app, host="0.0.0.0", port=HTTP_PORT)
     else:
         logger.info("Starting Hospitable MCP server in STDIO mode")
         mcp.run()
