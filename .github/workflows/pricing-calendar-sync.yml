@@ -1,0 +1,21 @@
+name: Pricing Calendar Sync (Chad)
+
+on:
+  schedule:
+    - cron: '0 15 * * *'   # 7am PST
+    - cron: '0 21 * * *'   # 1pm PST
+    - cron: '0 5 * * *'    # 9pm PST
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python sync_pricing_calendar.py
+        env:
+          HOSPITABLE_PAT: ${{ secrets.HOSPITABLE_PAT }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}

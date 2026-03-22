@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""
+Sync guest contact info from Hospitable reservations to Notion.
+Replaces StayFi -- pulls phone numbers and emails directly from reservation data.
+
+Runs daily. Deduplicates by Reservation ID so it's safe to re-run.
+"""
+
+import json, os, ssl, time, urllib.request, urllib.error
+from datetime import datetime, timedelta
+
+# --- Config ---
+NOTION_DB_ID = "32950c17-99cc-810b-b234-e3f653240342"
+HOSPITABLE_BASE = "https://public.api.hospitable.com/v2"
+
+# Load tokens -- env vars first (GitHub Actions), then local files
+HOSPITABLE_PAT = os.environ.get("HOSPITABLE_PAT", "")
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
+
+if not HOSPITABLE_PAT or not NOTION_TOKEN:
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+        HOSPITABLE_PAT = HOSPITABLE_PAT or os.environ.get("HOSPITABLE_PAT", "")
+    except ImportError:
+        pass
+    if not NOTION_TOKEN:
+        try:
+            with open(os.path.expanduser("~/.claude.json")) as f:
+                _cfg = json.load(f)
+            _headers_str = _cfg["mcpServers"]["notionApi"]["env"]["OPENAPI_MCP_HEADERS"]
+            NOTION_TOKEN = json.loads(_headers_str)["Authorization"].replace("Bearer ", "")
+        except (FileNotFoundError, KeyError):
+            pass
+
+CTX = ssl.create_default_context()
+
+# All active properties (excluding ZZZ-prefixed inactive ones)
+PROPERTIES = {
+    "92a1c198-4d3e-4d1b-a5f8-e90f98f1c49c": "65th",
+    "13a74151-c6bc-434b-8de1-549f048d77c7": "Gunny",
+    "f1970a87-2c41-4cd8-b222-329980b45a78": "Mary Anne",
+    "c50f431b-1d44-40fd-8788-92708710a1cc": "Andy",
+    "f3fd4981-3f21-4c5a-8888-ba259834ddb5": "8th",
+    "bd0528ad-c1cb-4035-821a-fb1199dfacaa": "Chris",
+    "d708140c-4ba0-4673-ba44-0b11d4f97181": "Lia",
+    "c80e149c-0ae3-4cf1-965b-5fd12e97f7f6": "Sophia",
+    "bef6a386-1446-4c09-a7db-757824cd6d35": "Eve",
+    "ab7b6a1b-b731-4046-8406-654a3b62b2cb": "Assim",
+    "10bd7b2b-e250-416f-b45f-a1a4d0e92e3c": "Susan",
+    "eefb5918-5149-4b4e-bdd0-277754409cb0": "Chad",
+    "56ea4fe3-3445-4a6b-962f-a02cbbd2869b": "Matthew",
+    "123ee545-ddf9-4e25-b6d0-e597afc5612b": "Jeremy",
+    "5cf63104-6ae7-40b2-aa7d-c10d18822ccd": "Don and Kathy",
+    "9bfda321-b0f0-4c4e-8f03-eeb86ef3c87f": "Sundee",
+    "4dbf5125-6efe-4097-90f6-3fab87a911d2": "Bridget",
+    "14912b54-f5e0-47ac-a8c2-1e1d9e17bbd6": "Adam",
+    "8423a091-1513-4d98-9e68-c6c3888b1f9e": "Michael",
+    "a8cd20bc-16f9-44d0-8c3f-12bea51720cb": "Nordic Loft",
+    "c84923ff-a37b-4463-93d6-d192de05be78": "Danial",
+    "df375ad6-b2e8-43de-a7f2-45d658864736": "Miller Bay",
+    "d92cdc13-8bd9-4803-a277-55f8ba36bd29": "Lower Unit",
+}
+
+
+def notion_request(method, endpoint, data=None):
+    """Make a Notion API request."""
+    url = f"https://api.notion.com/v1{endpoint}"
+    body = json.dumps(data).encode() if data else None
+    req = urllib.request.Request(
+        url, data=body, method=method,
+        headers={
+            "Authorization": f"Bearer {NOTION_TOKEN}",
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28",
+        },
+    )
+    resp = urllib.request.urlopen(req, context=CTX)
+    return json.loads(resp.read())
+
+
+def hospitable_request(endpoint, params=None):
+    """Make a Hospitable API request."""
+    url = f"{HOSPITABLE_BASE}{endpoint}"
+    if params:
+        url += "?" + "&".join(f"{k}={v}" for k, v in params.items())
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {HOSPITABLE_PAT}", "Accept": "application/json"},
+    )
+    resp = urllib.request.urlopen(req, context=CTX)
+    return json.loads(resp.read())
+
+
+def get_existing_reservation_ids():
+    """Get all Reservation IDs already in the Notion database."""
+    existing = set()
+    has_more = True
+    start_cursor = None
+
+    while has_more:
+        payload = {"page_size": 100}
+        if start_cursor:
+            payload["start_cursor"] = start_cursor
+        result = notion_request("POST", f"/databases/{NOTION_DB_ID}/query", payload)
+        for page in result["results"]:
+            rt = page["properties"].get("Reservation ID", {}).get("rich_text", [])
+            if rt:
+                existing.add(rt[0]["plain_text"])
+        has_more = result.get("has_more", False)
+        start_cursor = result.get("next_cursor")
+
+    return existing
+
+
+def fetch_reservations(property_uuid, start_date=None, end_date=None):
+    """Fetch reservations for a property from Hospitable."""
+    all_reservations = []
+    page = 1
+
+    while True:
+        params = {
+            "properties[]": property_uuid,
+            "include": "guest",
+            "per_page": "50",
+            "page": str(page),
+        }
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+
+        result = hospitable_request("/reservations", params)
+        all_reservations.extend(result.get("data", []))
+
+        if result["meta"]["current_page"] >= result["meta"]["last_page"]:
+            break
+        page += 1
+
+    return all_reservations
+
+
+COUNTRY_CODES = {
+    "1": "US/CA", "44": "UK", "52": "MX", "61": "AU", "63": "PH",
+    "64": "NZ", "81": "JP", "82": "KR", "86": "CN", "91": "IN",
+    "33": "FR", "49": "DE", "39": "IT", "34": "ES", "31": "NL",
+    "46": "SE", "47": "NO", "45": "DK", "358": "FI", "41": "CH",
+    "55": "BR", "57": "CO", "56": "CL", "54": "AR",
+    "65": "SG", "66": "TH", "60": "MY", "62": "ID",
+    "972": "IL", "971": "AE", "966": "SA",
+    "353": "IE", "48": "PL", "43": "AT", "32": "BE",
+    "351": "PT", "30": "GR", "7": "RU",
+}
+
+
+def format_phone(numbers):
+    """Format phone numbers list into a readable string with + prefix."""
+    if not numbers or not numbers[0]:
+        return None
+    phone = str(numbers[0]).lstrip("+")
+    # US/Canada: 11 digits starting with 1, or 10 digits
+    if len(phone) == 11 and phone.startswith("1"):
+        return f"+1 ({phone[1:4]}) {phone[4:7]}-{phone[7:]}"
+    elif len(phone) == 10:
+        return f"+1 ({phone[0:3]}) {phone[3:6]}-{phone[6:]}"
+    # International: detect country code and prepend +
+    for cc in sorted(COUNTRY_CODES.keys(), key=len, reverse=True):
+        if phone.startswith(cc) and len(phone) > len(cc) + 5:
+            return f"+{phone}"
+    # Fallback: just prepend + if it looks like a full number
+    if len(phone) >= 10:
+        return f"+{phone}"
+    return phone
+
+
+def create_contact(reservation, property_name):
+    """Create a Notion page for a guest contact."""
+    guest = reservation.get("guest", {})
+    if not guest:
+        return False
+
+    first = guest.get("first_name", "")
+    last = guest.get("last_name", "")
+    name = f"{first} {last}".strip() or "Unknown Guest"
+
+    phone_raw = guest.get("phone_numbers", [])
+    phone = format_phone(phone_raw)
+    email = guest.get("email")
+    location = guest.get("location", "")
+
+    platform = reservation.get("platform", "").capitalize()
+    if platform == "Booking_com":
+        platform = "Booking.com"
+
+    checkin = reservation.get("arrival_date", "")[:10] if reservation.get("arrival_date") else None
+    checkout = reservation.get("departure_date", "")[:10] if reservation.get("departure_date") else None
+    nights = reservation.get("nights")
+    guests_data = reservation.get("guests", {})
+    total_guests = guests_data.get("total")
+    adults = guests_data.get("adult_count")
+    children = guests_data.get("child_count")
+    infants = guests_data.get("infant_count")
+    pets = guests_data.get("pet_count")
+    booking_date = reservation.get("booking_date", "")[:10] if reservation.get("booking_date") else None
+    res_id = reservation.get("code", reservation.get("id", ""))
+
+    # Build properties
+    props = {
+        "Name": {"title": [{"text": {"content": name}}]},
+        "Property": {"select": {"name": property_name}},
+        "Reservation ID": {"rich_text": [{"text": {"content": str(res_id)}}]},
+    }
+
+    if phone:
+        props["Phone"] = {"phone_number": phone}
+    if email:
+        props["Email"] = {"email": email}
+    if platform:
+        props["Platform"] = {"select": {"name": platform}}
+    if checkin:
+        props["Check-in"] = {"date": {"start": checkin}}
+    if checkout:
+        props["Check-out"] = {"date": {"start": checkout}}
+    if nights:
+        props["Nights"] = {"number": nights}
+    if total_guests:
+        props["Guests"] = {"number": total_guests}
+    if adults is not None:
+        props["Adults"] = {"number": adults}
+    if children is not None:
+        props["Children"] = {"number": children}
+    if infants is not None:
+        props["Infants"] = {"number": infants}
+    if pets is not None:
+        props["Pets"] = {"number": pets}
+    if location:
+        props["Location"] = {"rich_text": [{"text": {"content": location}}]}
+    if booking_date:
+        props["Booking Date"] = {"date": {"start": booking_date}}
+
+    notion_request("POST", "/pages", {
+        "parent": {"database_id": NOTION_DB_ID},
+        "properties": props,
+    })
+    return True
+
+
+def main():
+    print(f"=== Guest Contacts Sync: {datetime.now().strftime('%Y-%m-%d %H:%M')} ===")
+
+    # Get existing reservation IDs to avoid duplicates
+    existing_ids = get_existing_reservation_ids()
+    print(f"Existing contacts in Notion: {len(existing_ids)}")
+
+    # For first run, pull all reservations back to 2020
+    # For subsequent runs, only pull recent (last 30 days check-in)
+    is_first_run = len(existing_ids) == 0
+    start_date = "2020-01-01" if is_first_run else (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    end_date = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")
+
+    if is_first_run:
+        print("First run -- pulling ALL reservations across all properties")
+    else:
+        print(f"Incremental run -- pulling reservations with check-in since {start_date}")
+
+    new_count = 0
+    skipped = 0
+    errors = 0
+
+    for prop_uuid, prop_name in PROPERTIES.items():
+        try:
+            reservations = fetch_reservations(prop_uuid, start_date, end_date)
+            prop_new = 0
+
+            for res in reservations:
+                res_id = res.get("code", res.get("id", ""))
+                if str(res_id) in existing_ids:
+                    skipped += 1
+                    continue
+
+                # Skip cancelled reservations
+                status = res.get("status", "")
+                if status in ("cancelled", "declined", "expired"):
+                    skipped += 1
+                    continue
+
+                try:
+                    if create_contact(res, prop_name):
+                        new_count += 1
+                        prop_new += 1
+                        existing_ids.add(str(res_id))
+                except Exception as e:
+                    print(f"  Error creating contact for {res_id}: {e}")
+                    errors += 1
+
+                # Rate limit: Notion allows 3 requests/sec
+                time.sleep(0.35)
+
+            if prop_new > 0:
+                print(f"  {prop_name}: +{prop_new} new contacts")
+
+        except Exception as e:
+            print(f"  Error fetching {prop_name}: {e}")
+            errors += 1
+
+        # Small delay between properties to respect Hospitable rate limits
+        time.sleep(0.5)
+
+    print(f"\nDone! New: {new_count} | Skipped: {skipped} | Errors: {errors}")
+    print(f"Total contacts in Notion: {len(existing_ids)}")
+
+    # --- Repeat guest detection ---
+    # A guest is "repeat" if the same guest ID appears on multiple reservations
+    print("\nChecking for repeat guests...")
+    mark_repeat_guests()
+
+
+def mark_repeat_guests():
+    """Scan all contacts and flag repeat guests (same Hospitable guest ID or name+phone)."""
+    all_pages = []
+    has_more = True
+    start_cursor = None
+
+    while has_more:
+        payload = {"page_size": 100}
+        if start_cursor:
+            payload["start_cursor"] = start_cursor
+        result = notion_request("POST", f"/databases/{NOTION_DB_ID}/query", payload)
+        all_pages.extend(result["results"])
+        has_more = result.get("has_more", False)
+        start_cursor = result.get("next_cursor")
+
+    # Group by name (lowercase) to find repeats
+    from collections import defaultdict
+    name_counts = defaultdict(list)
+    for page in all_pages:
+        title = page["properties"].get("Name", {}).get("title", [])
+        name = title[0]["plain_text"].strip().lower() if title else ""
+        phone = page["properties"].get("Phone", {}).get("phone_number", "")
+        is_repeat = page["properties"].get("Repeat Guest", {}).get("checkbox", False)
+        if name and name != "unknown guest":
+            # Use name as key; if phone exists, use name+phone for more precision
+            key = name
+            name_counts[key].append((page["id"], is_repeat))
+
+    # Find names with multiple reservations and mark as repeat
+    repeats_marked = 0
+    for name, pages in name_counts.items():
+        if len(pages) > 1:
+            for page_id, already_marked in pages:
+                if not already_marked:
+                    try:
+                        notion_request("PATCH", f"/pages/{page_id}", {
+                            "properties": {"Repeat Guest": {"checkbox": True}}
+                        })
+                        repeats_marked += 1
+                        time.sleep(0.35)
+                    except Exception as e:
+                        print(f"  Error marking repeat: {e}")
+
+    repeat_guests = sum(1 for pages in name_counts.values() if len(pages) > 1)
+    print(f"Repeat guests: {repeat_guests} unique guests with multiple stays ({repeats_marked} newly marked)")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,20 @@
+name: Guest Contacts Sync
+
+on:
+  schedule:
+    - cron: '0 16 * * *'  # 8am PST (UTC-8) daily
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install python-dotenv
+      - run: python sync_guest_contacts.py
+        env:
+          HOSPITABLE_PAT: ${{ secrets.HOSPITABLE_PAT }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}

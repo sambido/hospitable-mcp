@@ -1,0 +1,18 @@
+name: Recycling Reminder - 8th
+
+on:
+  schedule:
+    - cron: '46 1 * * 2'  # Every Tuesday 01:46 UTC = Monday 5:46pm PST
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python recycling_reminder.py 8th
+        env:
+          HOSPITABLE_PAT: ${{ secrets.HOSPITABLE_PAT }}
