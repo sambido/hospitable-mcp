@@ -163,12 +163,13 @@ def get_active_reservation(property_uuid):
     today = datetime.date.today().isoformat()
     tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 
-    # Get reservations that overlap today
+    # Get reservations in a narrow window around today
+    week_ago = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
     r = hospitable_get("/reservations", {
         "properties[]": property_uuid,
         "include": "guest",
         "per_page": "50",
-        "start_date": "2020-01-01",
+        "start_date": week_ago,
         "end_date": tomorrow,
     })
 
