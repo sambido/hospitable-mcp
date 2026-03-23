@@ -50,7 +50,7 @@ STR_LISTINGS_DB = "1eb50c17-99cc-8091-a8ea-e0ba6ec649ff"
 SYNC_STATE_PAGE = os.environ.get("SYNC_STATE_PAGE", "32c50c17-99cc-8186-b03b-d9287547feff")
 
 # Claude model for classification
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
 
 # --------------------------------------------------------------------------- #
