@@ -240,4 +240,9 @@ def sync():
     print(f"  Unchanged: {unchanged}")
 
 if __name__ == "__main__":
-    sync()
+    try:
+        sync()
+    except Exception as e:
+        import sys
+        print(f"\nFATAL: {e}")
+        sys.exit(1)

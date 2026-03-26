@@ -6,8 +6,10 @@ Replaces StayFi -- pulls phone numbers and emails directly from reservation data
 Runs daily. Deduplicates by Reservation ID so it's safe to re-run.
 """
 
-import json, os, ssl, time, urllib.request, urllib.error
+import json, os, re, ssl, sys, time, urllib.request, urllib.error
 from datetime import datetime, timedelta
+
+EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
 # --- Config ---
 NOTION_DB_ID = "32950c17-99cc-810b-b234-e3f653240342"
@@ -173,6 +175,43 @@ def format_phone(numbers):
     return phone
 
 
+HOST_EMAILS = {
+    "sam.esecson@gmail.com",
+    "samesecson@gmail.com",
+    # Add any other host/team emails here
+}
+
+
+def scrape_email_from_messages(reservation_uuid):
+    """Scan Hospitable message threads for guest email addresses.
+    Only scans messages FROM the guest (no sender = AI-generated, skip those too)."""
+    try:
+        result = hospitable_request(f"/reservations/{reservation_uuid}/messages", {"per_page": "50"})
+        messages = result.get("data", [])
+        for msg in messages:
+            # Skip AI-generated messages (no sender) and host messages
+            sender = msg.get("sender")
+            if not sender:
+                continue
+            sender_role = sender.get("role", "")
+            if sender_role in ("host", "team", "co_host"):
+                continue
+
+            body = msg.get("body", "") or ""
+            matches = EMAIL_REGEX.findall(body)
+            for email in matches:
+                lower = email.lower()
+                # Filter out relay/platform emails and host emails
+                if any(skip in lower for skip in ["noreply", "no-reply", "airbnb", "vrbo", "booking.com", "hospitable", "guest.booking"]):
+                    continue
+                if lower in HOST_EMAILS:
+                    continue
+                return email
+    except Exception as e:
+        pass
+    return None
+
+
 def create_contact(reservation, property_name):
     """Create a Notion page for a guest contact."""
     guest = reservation.get("guest", {})
@@ -186,6 +225,13 @@ def create_contact(reservation, property_name):
     phone_raw = guest.get("phone_numbers", [])
     phone = format_phone(phone_raw)
     email = guest.get("email")
+    # If no email from reservation data, scan message threads
+    if not email:
+        res_uuid = reservation.get("id", "")
+        if res_uuid:
+            email = scrape_email_from_messages(res_uuid)
+            if email:
+                print(f"    Found email in messages: {email}")
     location = guest.get("location", "")
 
     platform = reservation.get("platform", "").capitalize()
@@ -309,10 +355,87 @@ def main():
     print(f"\nDone! New: {new_count} | Skipped: {skipped} | Errors: {errors}")
     print(f"Total contacts in Notion: {len(existing_ids)}")
 
+    # --- Backfill emails for existing contacts missing them ---
+    print("\nBackfilling emails from message threads for existing contacts...")
+    backfill_emails()
+
     # --- Repeat guest detection ---
     # A guest is "repeat" if the same guest ID appears on multiple reservations
     print("\nChecking for repeat guests...")
     mark_repeat_guests()
+
+    if errors > 0:
+        sys.exit(1)
+
+
+def backfill_emails():
+    """Scan message threads for emails on existing contacts that are missing an email."""
+    # Query contacts with no email
+    all_pages = []
+    has_more = True
+    start_cursor = None
+
+    while has_more:
+        payload = {
+            "page_size": 100,
+            "filter": {
+                "property": "Email",
+                "email": {"is_empty": True}
+            }
+        }
+        if start_cursor:
+            payload["start_cursor"] = start_cursor
+        result = notion_request("POST", f"/databases/{NOTION_DB_ID}/query", payload)
+        all_pages.extend(result["results"])
+        has_more = result.get("has_more", False)
+        start_cursor = result.get("next_cursor")
+
+    print(f"  Contacts missing email: {len(all_pages)}")
+    if not all_pages:
+        return
+
+    # We need reservation UUIDs -- but we only have reservation codes in Notion.
+    # Fetch reservations per property and build a code->UUID map.
+    code_to_uuid = {}
+    for prop_uuid, prop_name in PROPERTIES.items():
+        try:
+            reservations = fetch_reservations(prop_uuid, "2020-01-01",
+                                              (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d"))
+            for res in reservations:
+                code = str(res.get("code", ""))
+                uuid = res.get("id", "")
+                if code and uuid:
+                    code_to_uuid[code] = uuid
+            time.sleep(0.5)
+        except Exception:
+            pass
+
+    emails_found = 0
+    for page in all_pages:
+        rt = page["properties"].get("Reservation ID", {}).get("rich_text", [])
+        if not rt:
+            continue
+        res_code = rt[0]["plain_text"]
+        res_uuid = code_to_uuid.get(res_code)
+        if not res_uuid:
+            continue
+
+        email = scrape_email_from_messages(res_uuid)
+        if email:
+            try:
+                notion_request("PATCH", f"/pages/{page['id']}", {
+                    "properties": {"Email": {"email": email}}
+                })
+                name = page["properties"].get("Name", {}).get("title", [{}])[0].get("plain_text", "?")
+                print(f"    {name}: {email}")
+                emails_found += 1
+                time.sleep(0.35)
+            except Exception as e:
+                print(f"    Error updating email: {e}")
+
+        time.sleep(0.5)  # Rate limit for Hospitable message API
+
+    print(f"  Backfilled {emails_found} emails from message threads")
 
 
 def mark_repeat_guests():
