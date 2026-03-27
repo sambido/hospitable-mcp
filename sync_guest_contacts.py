@@ -65,20 +65,29 @@ PROPERTIES = {
 }
 
 
-def notion_request(method, endpoint, data=None):
-    """Make a Notion API request."""
+def notion_request(method, endpoint, data=None, retries=3):
+    """Make a Notion API request with retry on transient errors."""
     url = f"https://api.notion.com/v1{endpoint}"
     body = json.dumps(data).encode() if data else None
-    req = urllib.request.Request(
-        url, data=body, method=method,
-        headers={
-            "Authorization": f"Bearer {NOTION_TOKEN}",
-            "Content-Type": "application/json",
-            "Notion-Version": "2022-06-28",
-        },
-    )
-    resp = urllib.request.urlopen(req, context=CTX)
-    return json.loads(resp.read())
+    for attempt in range(retries):
+        req = urllib.request.Request(
+            url, data=body, method=method,
+            headers={
+                "Authorization": f"Bearer {NOTION_TOKEN}",
+                "Content-Type": "application/json",
+                "Notion-Version": "2022-06-28",
+            },
+        )
+        try:
+            resp = urllib.request.urlopen(req, context=CTX)
+            return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 502, 503) and attempt < retries - 1:
+                wait = 2 ** attempt
+                print(f"  Notion {e.code}, retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
 
 
 def hospitable_request(endpoint, params=None):
