@@ -7,7 +7,10 @@ Runs daily. Deduplicates by Reservation ID so it's safe to re-run.
 """
 
 import json, os, re, ssl, sys, time, urllib.request, urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+PACIFIC = ZoneInfo("America/Los_Angeles")
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
@@ -256,7 +259,15 @@ def create_contact(reservation, property_name):
     children = guests_data.get("child_count")
     infants = guests_data.get("infant_count")
     pets = guests_data.get("pet_count")
-    booking_date = reservation.get("booking_date", "")[:10] if reservation.get("booking_date") else None
+    booking_date_raw = reservation.get("booking_date")
+    booking_date = None
+    if booking_date_raw:
+        try:
+            # Hospitable returns UTC — convert to Pacific before extracting date
+            utc_dt = datetime.fromisoformat(booking_date_raw.replace("Z", "+00:00"))
+            booking_date = utc_dt.astimezone(PACIFIC).strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            booking_date = booking_date_raw[:10]
     res_id = reservation.get("code", reservation.get("id", ""))
 
     # Build properties
