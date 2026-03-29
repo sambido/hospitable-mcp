@@ -1,0 +1,35 @@
+name: Turnover Schedule Sync
+
+on:
+  schedule:
+    - cron: '0 14 * * *'  # 6am PST
+    - cron: '0 20 * * *'  # 12pm PST
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install python-dotenv
+      - run: python sync_turnover_schedule.py
+        env:
+          HOSPITABLE_PAT: ${{ secrets.HOSPITABLE_PAT }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: Alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK_URL" -H 'Content-type: application/json' \
+            -d '{"text":"🚨 *Turnover Schedule Sync* failed.\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"}'
+          curl -s -X POST 'https://api.notion.com/v1/pages' \
+            -H "Authorization: Bearer $NOTION_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "Notion-Version: 2022-06-28" \
+            -d "{\"parent\":{\"database_id\":\"32f50c17-99cc-816f-9f25-e5d8a68ec075\"},\"properties\":{\"Name\":{\"title\":[{\"text\":{\"content\":\"Turnover Schedule Sync\"}}]},\"Source\":{\"select\":{\"name\":\"GitHub Actions\"}},\"Status\":{\"select\":{\"name\":\"New\"}},\"Timestamp\":{\"date\":{\"start\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}},\"Run URL\":{\"url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}}}"
