@@ -106,9 +106,9 @@ def hospitable_request(endpoint, params=None):
     return json.loads(resp.read())
 
 
-def get_existing_reservation_ids():
-    """Get all Reservation IDs already in the Notion database."""
-    existing = set()
+def get_existing_contacts():
+    """Get all existing contacts from Notion. Returns dict: res_id -> {page_id, has_email}."""
+    existing = {}
     has_more = True
     start_cursor = None
 
@@ -120,7 +120,12 @@ def get_existing_reservation_ids():
         for page in result["results"]:
             rt = page["properties"].get("Reservation ID", {}).get("rich_text", [])
             if rt:
-                existing.add(rt[0]["plain_text"])
+                res_id = rt[0]["plain_text"]
+                email_prop = page["properties"].get("Email", {}).get("email")
+                existing[res_id] = {
+                    "page_id": page["id"],
+                    "has_email": bool(email_prop),
+                }
         has_more = result.get("has_more", False)
         start_cursor = result.get("next_cursor")
 
@@ -314,8 +319,9 @@ def create_contact(reservation, property_name):
 def main():
     print(f"=== Guest Contacts Sync: {datetime.now().strftime('%Y-%m-%d %H:%M')} ===")
 
-    # Get existing reservation IDs to avoid duplicates
-    existing_ids = get_existing_reservation_ids()
+    # Get existing contacts for dedup and email backfill
+    existing = get_existing_contacts()
+    existing_ids = set(existing.keys())
     print(f"Existing contacts in Notion: {len(existing_ids)}")
 
     # Always pull all reservations — past and future — to capture every email.
@@ -335,8 +341,25 @@ def main():
             prop_new = 0
 
             for res in reservations:
-                res_id = res.get("code", res.get("id", ""))
-                if str(res_id) in existing_ids:
+                res_id = str(res.get("code", res.get("id", "")))
+                if res_id in existing_ids:
+                    # Backfill email if existing entry is missing one
+                    entry = existing.get(res_id, {})
+                    if not entry.get("has_email"):
+                        guest = res.get("guest", {}) or {}
+                        email = guest.get("email")
+                        if not email:
+                            res_uuid = res.get("id", "")
+                            if res_uuid:
+                                email = scrape_email_from_messages(res_uuid)
+                        if email:
+                            page_id = entry.get("page_id")
+                            if page_id:
+                                notion_request("PATCH", f"/pages/{page_id}", {
+                                    "properties": {"Email": {"email": email}}
+                                })
+                                print(f"  Backfilled email for {res_id}: {email}")
+                                time.sleep(0.35)
                     skipped += 1
                     continue
 
