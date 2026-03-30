@@ -110,8 +110,9 @@ You will receive guest messages from Airbnb/VRBO reservations. For each message,
    For Maintenance: "Dishwasher not draining" not "so the dishwasher seems to have some issue"
    For Guest Request: "Early check-in request" not "would it be possible to maybe come a bit early"
 
-3. CATEGORY: Best fit from these lists:
+3. CATEGORY: Best fit from these lists (you may return multiple categories as a comma-separated string when appropriate):
    FAQ categories: Check-In, Check-Out, Parking & Transportation, Wifi & Tech, Kitchen, Cleaning & Laundry, Bedding & Linens, Baby & Family, Pets, Outdoor Spaces, Local Area & Dining, Property Layout, Safety & Emergencies, House Rules & Policies, Activities & Attractions
+   Category hints: Questions about fenced yards, dog-friendly spaces, or pet safety always include "Pets" (plus "Outdoor Spaces" if about a yard/patio).
    Maintenance categories: Plumbing, Electrical, Appliance, HVAC, Structural, Cleaning, Pest, Exterior, Safety, Other
    Guest Request categories: Early Check-in, Late Check-out, Extra Supplies, Special Occasion, Package Delivery, Transportation, Other
 
@@ -239,7 +240,7 @@ def get_existing_faqs():
 def create_faq(question, category, property_notion_id):
     props = {
         "Name": {"title": [{"text": {"content": question}}]},
-        "Category": {"multi_select": [{"name": category}]},
+        "Category": {"multi_select": [{"name": c.strip()} for c in category.split(",")]},
         "Frequency Count": {"number": 1},
         "Frequency Tier": {"select": {"name": "Low"}},
         "Scope": {"select": {"name": "Property-Specific"}},
@@ -329,7 +330,7 @@ def main():
             continue
 
         for res in res_resp.get("data", []):
-            if res.get("status") != "accepted":
+            if res.get("status") not in ("accepted", "inquiry", "pending"):
                 continue
 
             # Step 5: Get messages for this reservation
