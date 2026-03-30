@@ -3,6 +3,7 @@ name: Recycling Reminder - 65th
 on:
   schedule:
     - cron: '46 0 * * 1'  # Every Monday 00:46 UTC = Sunday 4:46pm PST
+    - cron: '46 2 * * 1'  # Backup: Monday 02:46 UTC = Sunday 6:46pm PST
   workflow_dispatch:
 
 jobs:

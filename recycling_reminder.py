@@ -217,6 +217,19 @@ def run_property(property_key):
 
     print(f"  Occupied by: {guest_name} (res: {res_id})")
 
+    # Dedup: check if we already sent a recycling message this week
+    try:
+        msgs = hospitable_get(f"/reservations/{res_id}/messages", {"per_page": "10"})
+        for m in msgs.get("data", []):
+            body = (m.get("body", "") or "").lower()
+            sent_at = m.get("created_at", "")[:10]
+            days_ago = (today - datetime.date.fromisoformat(sent_at)).days if sent_at else 999
+            if days_ago <= 2 and ("recycling" in body or "bins" in body):
+                print(f"  Already sent recycling message {days_ago}d ago -- skipping")
+                return
+    except Exception as e:
+        print(f"  Warning: could not check for existing message: {e}")
+
     # Send the right message
     msg = MSG_RECYCLING_ON if recycling else MSG_RECYCLING_OFF
     try:
