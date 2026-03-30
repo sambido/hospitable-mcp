@@ -318,16 +318,12 @@ def main():
     existing_ids = get_existing_reservation_ids()
     print(f"Existing contacts in Notion: {len(existing_ids)}")
 
-    # For first run, pull all reservations back to 2020
-    # For subsequent runs, only pull recent (last 30 days check-in)
-    is_first_run = len(existing_ids) == 0
-    start_date = "2020-01-01" if is_first_run else (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    # Always pull all reservations — past and future — to capture every email.
+    # Dedup by Reservation ID means re-scanning is safe and fast.
+    start_date = "2020-01-01"
     end_date = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")
 
-    if is_first_run:
-        print("First run -- pulling ALL reservations across all properties")
-    else:
-        print(f"Incremental run -- pulling reservations with check-in since {start_date}")
+    print(f"Pulling all reservations ({start_date} to {end_date})")
 
     new_count = 0
     skipped = 0
