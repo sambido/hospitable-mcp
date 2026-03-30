@@ -65,6 +65,8 @@ PROPERTIES = {
     "c84923ff-a37b-4463-93d6-d192de05be78": "Danial",
     "df375ad6-b2e8-43de-a7f2-45d658864736": "Miller Bay",
     "d92cdc13-8bd9-4803-a277-55f8ba36bd29": "Lower Unit",
+    "725901a7-f4a4-4892-866b-df14dc8f4ff7": "32nd",
+    "5a3010a8-602d-4d79-9fa0-18f99d02fb88": "Dara",
 }
 
 
@@ -107,7 +109,7 @@ def hospitable_request(endpoint, params=None):
 
 
 def get_existing_contacts():
-    """Get all existing contacts from Notion. Returns dict: res_id -> {page_id, has_email}."""
+    """Get all existing contacts from Notion. Returns dict: res_id -> {page_id, email, has_email, has_additional_email}."""
     existing = {}
     has_more = True
     start_cursor = None
@@ -122,9 +124,12 @@ def get_existing_contacts():
             if rt:
                 res_id = rt[0]["plain_text"]
                 email_prop = page["properties"].get("Email", {}).get("email")
+                additional_email_prop = page["properties"].get("Additional Email", {}).get("email")
                 existing[res_id] = {
                     "page_id": page["id"],
+                    "email": email_prop,
                     "has_email": bool(email_prop),
+                    "has_additional_email": bool(additional_email_prop),
                 }
         has_more = result.get("has_more", False)
         start_cursor = result.get("next_cursor")
@@ -199,9 +204,10 @@ HOST_EMAILS = {
 }
 
 
-def scrape_email_from_messages(reservation_uuid):
+def scrape_email_from_messages(reservation_uuid, exclude_email=None):
     """Scan Hospitable message threads for guest email addresses.
-    Only scans messages FROM the guest (no sender = AI-generated, skip those too)."""
+    Only scans messages FROM the guest (no sender = AI-generated, skip those too).
+    If exclude_email is provided, skips that email (used to find a *different* email)."""
     try:
         result = hospitable_request(f"/reservations/{reservation_uuid}/messages", {"per_page": "50"})
         messages = result.get("data", [])
@@ -223,6 +229,8 @@ def scrape_email_from_messages(reservation_uuid):
                     continue
                 if lower in HOST_EMAILS:
                     continue
+                if exclude_email and lower == exclude_email.lower():
+                    continue
                 return email
     except Exception as e:
         pass
@@ -242,13 +250,22 @@ def create_contact(reservation, property_name):
     phone_raw = guest.get("phone_numbers", [])
     phone = format_phone(phone_raw)
     email = guest.get("email")
-    # If no email from reservation data, scan message threads
+    additional_email = None
+    res_uuid = reservation.get("id", "")
+
     if not email:
-        res_uuid = reservation.get("id", "")
+        # No primary email -- try message threads
         if res_uuid:
             email = scrape_email_from_messages(res_uuid)
             if email:
                 print(f"    Found email in messages: {email}")
+    else:
+        # Have primary email -- scrape messages for a *different* email
+        if res_uuid:
+            additional_email = scrape_email_from_messages(res_uuid, exclude_email=email)
+            if additional_email:
+                print(f"    Found additional email in messages: {additional_email}")
+
     location = guest.get("location", "")
 
     platform = reservation.get("platform", "").capitalize()
@@ -286,6 +303,8 @@ def create_contact(reservation, property_name):
         props["Phone"] = {"phone_number": phone}
     if email:
         props["Email"] = {"email": email}
+    if additional_email:
+        props["Additional Email"] = {"email": additional_email}
     if platform:
         props["Platform"] = {"select": {"name": platform}}
     if checkin:
@@ -343,23 +362,37 @@ def main():
             for res in reservations:
                 res_id = str(res.get("code", res.get("id", "")))
                 if res_id in existing_ids:
-                    # Backfill email if existing entry is missing one
                     entry = existing.get(res_id, {})
+                    updates = {}
+
+                    guest = res.get("guest", {}) or {}
+                    primary_email = guest.get("email")
+                    res_uuid = res.get("id", "")
+
+                    # Backfill primary email if missing
                     if not entry.get("has_email"):
-                        guest = res.get("guest", {}) or {}
-                        email = guest.get("email")
-                        if not email:
-                            res_uuid = res.get("id", "")
-                            if res_uuid:
-                                email = scrape_email_from_messages(res_uuid)
+                        email = primary_email
+                        if not email and res_uuid:
+                            email = scrape_email_from_messages(res_uuid)
                         if email:
-                            page_id = entry.get("page_id")
-                            if page_id:
-                                notion_request("PATCH", f"/pages/{page_id}", {
-                                    "properties": {"Email": {"email": email}}
-                                })
-                                print(f"  Backfilled email for {res_id}: {email}")
-                                time.sleep(0.35)
+                            updates["Email"] = {"email": email}
+                            print(f"  Backfilled email for {res_id}: {email}")
+
+                    # Backfill additional email if missing
+                    if not entry.get("has_additional_email"):
+                        known_email = entry.get("email") or primary_email
+                        if known_email and res_uuid:
+                            add_email = scrape_email_from_messages(res_uuid, exclude_email=known_email)
+                            if add_email:
+                                updates["Additional Email"] = {"email": add_email}
+                                print(f"  Backfilled additional email for {res_id}: {add_email}")
+
+                    if updates:
+                        page_id = entry.get("page_id")
+                        if page_id:
+                            notion_request("PATCH", f"/pages/{page_id}", {"properties": updates})
+                            time.sleep(0.35)
+
                     skipped += 1
                     continue
 
@@ -408,8 +441,8 @@ def main():
 
 
 def backfill_emails():
-    """Scan message threads for emails on existing contacts that are missing an email."""
-    # Query contacts with no email
+    """Scan message threads for emails on existing contacts missing primary or additional email."""
+    # Query contacts missing primary email OR missing additional email
     all_pages = []
     has_more = True
     start_cursor = None
@@ -418,8 +451,10 @@ def backfill_emails():
         payload = {
             "page_size": 100,
             "filter": {
-                "property": "Email",
-                "email": {"is_empty": True}
+                "or": [
+                    {"property": "Email", "email": {"is_empty": True}},
+                    {"property": "Additional Email", "email": {"is_empty": True}},
+                ]
             }
         }
         if start_cursor:
@@ -429,13 +464,16 @@ def backfill_emails():
         has_more = result.get("has_more", False)
         start_cursor = result.get("next_cursor")
 
-    print(f"  Contacts missing email: {len(all_pages)}")
+    missing_primary = sum(1 for p in all_pages if not p["properties"].get("Email", {}).get("email"))
+    missing_additional = sum(1 for p in all_pages if not p["properties"].get("Additional Email", {}).get("email"))
+    print(f"  Contacts missing primary email: {missing_primary}")
+    print(f"  Contacts missing additional email: {missing_additional}")
     if not all_pages:
         return
 
-    # We need reservation UUIDs -- but we only have reservation codes in Notion.
-    # Fetch reservations per property and build a code->UUID map.
+    # Build code->UUID map from Hospitable reservations
     code_to_uuid = {}
+    code_to_email = {}
     for prop_uuid, prop_name in PROPERTIES.items():
         try:
             reservations = fetch_reservations(prop_uuid, "2020-01-01",
@@ -443,13 +481,17 @@ def backfill_emails():
             for res in reservations:
                 code = str(res.get("code", ""))
                 uuid = res.get("id", "")
+                guest = res.get("guest", {}) or {}
                 if code and uuid:
                     code_to_uuid[code] = uuid
+                    if guest.get("email"):
+                        code_to_email[code] = guest["email"]
             time.sleep(0.5)
         except Exception:
             pass
 
-    emails_found = 0
+    primary_found = 0
+    additional_found = 0
     for page in all_pages:
         rt = page["properties"].get("Reservation ID", {}).get("rich_text", [])
         if not rt:
@@ -459,22 +501,38 @@ def backfill_emails():
         if not res_uuid:
             continue
 
-        email = scrape_email_from_messages(res_uuid)
-        if email:
+        existing_email = page["properties"].get("Email", {}).get("email")
+        existing_additional = page["properties"].get("Additional Email", {}).get("email")
+        updates = {}
+        name = page["properties"].get("Name", {}).get("title", [{}])[0].get("plain_text", "?")
+
+        if not existing_email:
+            # Try to fill primary email
+            email = code_to_email.get(res_code) or scrape_email_from_messages(res_uuid)
+            if email:
+                updates["Email"] = {"email": email}
+                existing_email = email
+                print(f"    {name}: primary email {email}")
+                primary_found += 1
+
+        if not existing_additional and existing_email:
+            # Try to find a different email in messages
+            add_email = scrape_email_from_messages(res_uuid, exclude_email=existing_email)
+            if add_email:
+                updates["Additional Email"] = {"email": add_email}
+                print(f"    {name}: additional email {add_email}")
+                additional_found += 1
+
+        if updates:
             try:
-                notion_request("PATCH", f"/pages/{page['id']}", {
-                    "properties": {"Email": {"email": email}}
-                })
-                name = page["properties"].get("Name", {}).get("title", [{}])[0].get("plain_text", "?")
-                print(f"    {name}: {email}")
-                emails_found += 1
+                notion_request("PATCH", f"/pages/{page['id']}", {"properties": updates})
                 time.sleep(0.35)
             except Exception as e:
-                print(f"    Error updating email: {e}")
+                print(f"    Error updating {name}: {e}")
 
         time.sleep(0.5)  # Rate limit for Hospitable message API
 
-    print(f"  Backfilled {emails_found} emails from message threads")
+    print(f"  Backfilled {primary_found} primary + {additional_found} additional emails")
 
 
 def mark_repeat_guests():
