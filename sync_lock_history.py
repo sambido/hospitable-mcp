@@ -20,8 +20,8 @@ LOCK_ACTIVITY_DB_ID = "33450c17-99cc-81e0-b025-f81a69944156"
 STR_LISTINGS_DB_ID = "1eb50c17-99cc-8091-a8ea-e0ba6ec649ff"
 HOSPITABLE_BASE = "https://public.api.hospitable.com/v2"
 
-# How many days back to look for checkouts
-LOOKBACK_DAYS = 7
+# How many days back to look for checkouts (override with LOOKBACK_DAYS env var)
+LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "7"))
 
 # Load tokens
 HA_TOKEN = os.environ.get("HA_TOKEN", "").strip()
@@ -200,6 +200,7 @@ CLEANER_PATTERNS = [
     "jiselle",
     "ana guayllas",
     "ana clean",
+    "gilda",
 ]
 
 # Property-specific cleaner overrides (owners who clean their own property)
