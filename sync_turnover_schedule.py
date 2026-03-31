@@ -168,7 +168,11 @@ Rules:
 - "Can I check in early?" without a specific time = null
 - "Arriving around 3" = checkin_time: "3pm"
 - "We'll be out by 9" = checkout_time: "9am"
-- FLIGHT TIME RULE: If the guest mentions a flight departure time but does NOT give an explicit checkout time, set checkout_time to 2 hours before the flight time, set flight_time to the stated flight time, and set checkout_is_flight_estimate to true. Example: "Our flight is at 2pm" = checkout_time: "12pm", flight_time: "2pm", checkout_is_flight_estimate: true. But if they say BOTH "we'll leave by 10am" AND "flight at 2pm", use the explicit time: checkout_time: "10am", flight_time: "2pm", checkout_is_flight_estimate: false.
+- FLIGHT TIME RULE: If the guest mentions a flight departure time but does NOT give an explicit checkout time, set checkout_time to 2 hours before the flight time, set flight_time to the stated flight time, and set checkout_is_flight_estimate to true. HOWEVER, if 2 hours before the flight is at or after 11am (the default checkout time), set checkout_time to null instead — the default checkout already applies. Only set a flight-estimated checkout when it's EARLIER than 11am, meaning the guest likely needs to leave early. Examples:
+  - "Our flight is at 8am" = checkout_time: "6am", flight_time: "8am", checkout_is_flight_estimate: true (useful — earlier than default)
+  - "Our flight is at 2pm" = checkout_time: null, flight_time: "2pm", checkout_is_flight_estimate: false (2hrs before = 12pm, past default checkout, not useful)
+  - "Our flight is at 12pm" = checkout_time: null, flight_time: "12pm", checkout_is_flight_estimate: false (2hrs before = 10am, close to default, not useful)
+  - But if they say BOTH "we'll leave by 10am" AND "flight at 2pm", use the explicit time: checkout_time: "10am", flight_time: "2pm", checkout_is_flight_estimate: false.
 - "Our flight is at 11am so we'll leave a few hours before" = checkout_time: "9am", flight_time: "11am", checkout_is_flight_estimate: true
 - Checkout day PM times: The guest's checkout date will be provided. If a guest says a PM time and it clearly refers to the evening BEFORE checkout day (leaving early), that PM is real. But if a PM time refers to checkout day itself, it's a typo — correct to AM. Example: checkout is March 30, guest says "out by 10pm Sunday" (checkout day) = "10am". But "leaving Saturday evening around 8pm" (night before) = "8pm".
 - Check-in times are ALWAYS in the afternoon or evening (PM). If a guest writes an early morning check-in time with "am", correct it to PM.
