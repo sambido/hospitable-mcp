@@ -431,8 +431,8 @@ def find_cleaning_session(events, checkout_dt, checkin_dt, prop_uuid):
             if etype == "guest":
                 # Next guest arrived, session is over
                 break
-            # Check for >3 hour gap (cleaner left, unrelated activity later)
-            if session_events and (evt["timestamp"] - session_events[-1]["timestamp"]).total_seconds() > 10800:
+            # Check for >90 min gap (cleaner left, separate visit later)
+            if session_events and (evt["timestamp"] - session_events[-1]["timestamp"]).total_seconds() > 5400:
                 break
             session_events.append(evt)
             entities_used.add(evt["entity_id"])

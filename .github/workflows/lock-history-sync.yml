@@ -20,6 +20,9 @@ jobs:
           HA_URL: ${{ secrets.HA_URL }}
           HOSPITABLE_PAT: ${{ secrets.HOSPITABLE_PAT }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      - run: python generate_lock_dashboard.py
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       - name: Alert on failure
         if: failure()
         env:
