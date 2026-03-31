@@ -24,10 +24,10 @@ HOSPITABLE_BASE = "https://public.api.hospitable.com/v2"
 LOOKBACK_DAYS = 7
 
 # Load tokens
-HA_TOKEN = os.environ.get("HA_TOKEN", "")
-HA_URL = os.environ.get("HA_URL", "").rstrip("/")
-HOSPITABLE_PAT = os.environ.get("HOSPITABLE_PAT", "")
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
+HA_TOKEN = os.environ.get("HA_TOKEN", "").strip()
+HA_URL = os.environ.get("HA_URL", "").strip().rstrip("/")
+HOSPITABLE_PAT = os.environ.get("HOSPITABLE_PAT", "").strip()
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "").strip()
 
 if not HOSPITABLE_PAT or not NOTION_TOKEN or not HA_TOKEN or not HA_URL:
     try:
@@ -199,6 +199,7 @@ CLEANER_PATTERNS = [
     "jay's cleaners",
     "jiselle",
     "ana guayllas",
+    "ana clean",
 ]
 
 # Property-specific cleaner overrides (owners who clean their own property)
@@ -213,6 +214,7 @@ ADMIN_PATTERNS = [
     "co-host",
     "mobile device",
     "weatherwood",
+    "owner:",
 ]
 
 # Hospitable guest code pattern: "Name Code123" (first name + space + alphanumeric 3-5 chars)
