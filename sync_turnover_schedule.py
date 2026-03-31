@@ -160,15 +160,16 @@ Given guest message text, extract:
 - late_checkout_requested: true if the guest asked about or requested late checkout, false otherwise
 
 Rules:
-- Return ONLY a raw JSON object: {"checkout_time": "...", "checkin_time": "...", "early_checkin_requested": false, "late_checkout_requested": false}
+- Return ONLY a raw JSON object: {"checkout_time": "...", "checkin_time": "...", "early_checkin_requested": false, "late_checkout_requested": false, "flight_time": "...", "checkout_is_flight_estimate": false}
 - No markdown, no code blocks, no explanation. Just the JSON object.
 - Use ONLY simple time format: "3pm", "10:30am", "noon", "early morning". No dates, no commas, no day names.
 - Use null for any time not mentioned.
-- Only extract times the guest EXPLICITLY states about their own plans. Do not infer from flight times or other indirect info.
+- Only extract times the guest EXPLICITLY states about their own plans.
 - "Can I check in early?" without a specific time = null
 - "Arriving around 3" = checkin_time: "3pm"
 - "We'll be out by 9" = checkout_time: "9am"
-- "Our flight is at 11am so we'll leave a few hours before" = checkout_time: null (too vague)
+- FLIGHT TIME RULE: If the guest mentions a flight departure time but does NOT give an explicit checkout time, set checkout_time to 2 hours before the flight time, set flight_time to the stated flight time, and set checkout_is_flight_estimate to true. Example: "Our flight is at 2pm" = checkout_time: "12pm", flight_time: "2pm", checkout_is_flight_estimate: true. But if they say BOTH "we'll leave by 10am" AND "flight at 2pm", use the explicit time: checkout_time: "10am", flight_time: "2pm", checkout_is_flight_estimate: false.
+- "Our flight is at 11am so we'll leave a few hours before" = checkout_time: "9am", flight_time: "11am", checkout_is_flight_estimate: true
 - Checkout day PM times: The guest's checkout date will be provided. If a guest says a PM time and it clearly refers to the evening BEFORE checkout day (leaving early), that PM is real. But if a PM time refers to checkout day itself, it's a typo — correct to AM. Example: checkout is March 30, guest says "out by 10pm Sunday" (checkout day) = "10am". But "leaving Saturday evening around 8pm" (night before) = "8pm".
 - Check-in times are ALWAYS in the afternoon or evening (PM). If a guest writes an early morning check-in time with "am", correct it to PM.
 - Ignore any times mentioned in messages from the host or automated system — only guest-stated times count."""
@@ -463,9 +464,16 @@ def main():
                     if times:
                         checkout_time = times.get("checkout_time")
                         late_checkout = times.get("late_checkout_requested", False)
+                        flight_time = times.get("flight_time")
+                        is_flight_estimate = times.get("checkout_is_flight_estimate", False)
                         if checkout_time:
-                            time_source = "Guest message"
-                            print(f"    Checkout time: {checkout_time}")
+                            if is_flight_estimate:
+                                time_source = "Flight estimate"
+                                notes = f"Flight at {flight_time}" if flight_time else ""
+                                print(f"    Checkout time: {checkout_time} (estimated from flight at {flight_time})")
+                            else:
+                                time_source = "Guest message"
+                                print(f"    Checkout time: {checkout_time}")
                         if late_checkout:
                             print(f"    Late checkout requested")
 
