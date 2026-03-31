@@ -18,6 +18,7 @@ PACIFIC = ZoneInfo("America/Los_Angeles")
 # --- Config ---
 LOCK_ACTIVITY_DB_ID = "33450c17-99cc-81e0-b025-f81a69944156"
 STR_LISTINGS_DB_ID = "1eb50c17-99cc-8091-a8ea-e0ba6ec649ff"
+CLEANING_TEAMS_DB_ID = "33450c17-99cc-810c-96ce-d0da64fad92e"
 HOSPITABLE_BASE = "https://public.api.hospitable.com/v2"
 
 # How many days back to look for checkouts (override with LOOKBACK_DAYS env var)
@@ -224,6 +225,41 @@ HOSP_CODE_RE = re.compile(r"^keypad - HOSP[A-Za-z0-9]+$")
 
 # Manual/auto patterns (not attributable to a person)
 MANUAL_PATTERNS = ["thumbturn", "1-touch locking", "unknown"]
+
+# Cleaning Teams Notion page IDs (for relation field)
+CLEANING_TEAM_IDS = {
+    "ana": "33450c17-99cc-8140-8fef-f8ef05477fba",
+    "jiselle": "33450c17-99cc-817f-a902-dfd903aacdf5",
+    "gilda": "33450c17-99cc-8120-8f5e-d4c28bd6f5e7",
+    "don and kathy": "33450c17-99cc-8123-94dc-c76384dc4328",
+}
+
+# Map raw changed_by person names to canonical team keys
+CLEANER_TEAM_MAP = {
+    "cleaner: ana": "ana",
+    "ana cleanpt7": "ana",
+    "ana clean2ho": "ana",
+    "ana cleanwrc": "ana",
+    "ana cleaner": "ana",
+    "ana guayllas": "ana",
+    "cleaner: gilda": "gilda",
+    "cleaner: gilda team": "gilda",
+    "gilda team": "gilda",
+    "jiselle j4x1": "jiselle",
+    "jiselle j5qi": "jiselle",
+    "jay's cleaners": "jiselle",
+    "owner: don and kathy": "don and kathy",
+}
+
+
+def get_cleaning_team_id(person_name):
+    """Look up the Cleaning Teams Notion page ID for a cleaner person name."""
+    if not person_name:
+        return None
+    team_key = CLEANER_TEAM_MAP.get(person_name.lower().strip())
+    if team_key:
+        return CLEANING_TEAM_IDS.get(team_key)
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -553,6 +589,12 @@ def build_notion_props(entry_type, prop_uuid, prop_name, data, res_code,
     notion_page_id = PROPERTY_NOTION_IDS.get(prop_uuid)
     if notion_page_id:
         props["Property"] = {"relation": [{"id": notion_page_id}]}
+
+    # Link cleaner rows to Cleaning Teams database
+    if entry_type == "Cleaner":
+        team_id = get_cleaning_team_id(data.get("person", ""))
+        if team_id:
+            props["Cleaning Team"] = {"relation": [{"id": team_id}]}
 
     if checkin_dt:
         props["Scheduled Check-in"] = {"date": {"start": checkin_dt.isoformat()}}
