@@ -194,6 +194,14 @@ SAM_PROPERTY_LOCKS = {
     ],
 }
 
+# Locks to EXCLUDE from cleaning session detection (building/storage locks).
+# These are still pulled for history but ignored when calculating session duration.
+EXCLUDED_SESSION_LOCKS = {
+    "lock.fremont_bldg_front",      # Chris — building common door
+    "lock.fremont_bldg_back",       # Chris — building common door
+    "lock.storage_closet_1022_lock", # Andy — storage closet
+}
+
 # Known cleaner code patterns
 CLEANER_PATTERNS = [
     "cleaner:",
@@ -451,6 +459,9 @@ def find_cleaning_session(events, checkout_dt, checkin_dt, prop_uuid):
             continue
         if checkin_dt and evt["timestamp"] > checkin_dt:
             break
+        # Skip building/storage locks for session detection
+        if evt["entity_id"] in EXCLUDED_SESSION_LOCKS:
+            continue
 
         etype, person = classify_changed_by(evt["changed_by"], prop_uuid)
 
@@ -508,6 +519,9 @@ def find_guest_activity(events, checkin_dt, checkout_dt, prop_uuid, guest_name):
         # Allow up to 2 hours after checkout to catch late checkouts
         if evt["timestamp"] > checkout_dt + timedelta(hours=2):
             break
+        # Skip building/storage locks for guest activity
+        if evt["entity_id"] in EXCLUDED_SESSION_LOCKS:
+            continue
         etype, _ = classify_changed_by(evt["changed_by"], prop_uuid)
         if etype == "guest":
             guest_events.append(evt)
