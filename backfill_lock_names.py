@@ -188,7 +188,9 @@ def main():
                 type_sel = page["properties"].get("Type", {}).get("select")
                 entry_type = type_sel["name"] if type_sel else ""
                 icon = "\U0001F9F9" if entry_type == "Cleaner" else "\U0001F511"
-                new_title = f"{icon} {new_person_part} — {prop_part.strip()} — {short_date}"
+                # Strip any existing 🏡 prefix from prop_part
+                clean_prop = prop_part.strip().lstrip("\U0001F3E1").strip()
+                new_title = f"{icon} {new_person_part} — \U0001F3E1 {clean_prop} — {short_date}"
                 if new_title != old_title:
                     props_patch["Name"] = {
                         "title": [{"text": {"content": new_title[:100]}}]
