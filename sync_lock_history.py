@@ -543,8 +543,13 @@ def find_cleaning_session(events, checkout_dt, checkin_dt, prop_uuid):
     }
 
 
-def find_guest_activity(events, checkin_dt, checkout_dt, prop_uuid, guest_name):
-    """Find guest activity during their stay."""
+def find_guest_activity(events, checkin_dt, checkout_dt, prop_uuid, guest_name,
+                        cleaner_start_dt=None):
+    """Find guest activity during their stay.
+
+    cleaner_start_dt: if provided, the last guest event before this time
+    is used as the "checked out" timestamp (actual departure proxy).
+    """
     guest_events = []
     entities_used = set()
 
@@ -567,25 +572,34 @@ def find_guest_activity(events, checkin_dt, checkout_dt, prop_uuid, guest_name):
             "person": guest_name,
             "first_event": None,
             "last_event": None,
+            "checked_out_event": None,
             "duration_hours": None,
             "event_count": 0,
             "no_show": True,
             "late_checkout": False,
             "entities_used": "",
-        "lock_names": "",
+            "lock_names": "",
         }
 
     first = guest_events[0]
     last = guest_events[-1]
     duration_hours = round((last["timestamp"] - first["timestamp"]).total_seconds() / 3600, 1)
 
+    # Checked Out = last guest event before cleaner arrives (actual departure)
+    if cleaner_start_dt:
+        pre_cleaner = [e for e in guest_events if e["timestamp"] < cleaner_start_dt]
+        checked_out = pre_cleaner[-1] if pre_cleaner else last
+    else:
+        checked_out = last
+
     # Late checkout: last guest event > 30min after scheduled checkout
-    late_checkout = last["timestamp"] > checkout_dt + timedelta(minutes=30)
+    late_checkout = checked_out["timestamp"] > checkout_dt + timedelta(minutes=30)
 
     return {
         "person": guest_name,
         "first_event": first["timestamp"],
         "last_event": last["timestamp"],
+        "checked_out_event": checked_out["timestamp"],
         "duration_hours": max(duration_hours, 0),
         "event_count": len(guest_events),
         "no_show": False,
@@ -665,7 +679,9 @@ def build_notion_props(entry_type, prop_uuid, prop_name, data, res_code,
         if entry_type == "Cleaner":
             props["Clean Finished"] = {"date": {"start": data["last_event"].isoformat()}}
         else:
-            props["Checked Out"] = {"date": {"start": data["last_event"].isoformat()}}
+            co_ts = data.get("checked_out_event") or data.get("last_event")
+            if co_ts:
+                props["Checked Out"] = {"date": {"start": co_ts.isoformat()}}
 
     # Compute all three duration formats from total minutes
     total_min = data.get("duration")  # cleaners have this
@@ -849,8 +865,9 @@ def main():
 
             # --- Guest row ---
             guest_key = f"{res_code}|Guest"
+            cleaner_start = cleaning["first_event"] if cleaning else None
             guest_data = find_guest_activity(events, checkin_dt, checkout_dt,
-                                             prop_uuid, guest_name)
+                                             prop_uuid, guest_name, cleaner_start)
             props = build_notion_props("Guest", prop_uuid, prop_name, guest_data,
                                        res_code, checkout_dt, next_checkin_dt, same_day)
             # For guest rows, Scheduled Check-in = their check-in, Scheduled Checkout = their checkout
