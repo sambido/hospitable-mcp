@@ -176,7 +176,9 @@ def main():
             if len(title_parts) == 3:
                 # Old format: "RawPerson — Property — YYYY-MM-DD"
                 old_person_part, prop_part, date_part = title_parts
-                new_person_part = clean_person_name(old_person_part.strip())
+                # Strip any existing type emoji (🧹🔑) from person part
+                stripped_person = re.sub(r'^[\U0001F9F9\U0001F511]\s*', '', old_person_part.strip())
+                new_person_part = clean_person_name(stripped_person)
                 # Convert "2026-03-22" to "Mar 22"
                 short_date = date_part.strip()
                 try:
