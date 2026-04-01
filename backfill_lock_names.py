@@ -185,7 +185,10 @@ def main():
                     short_date = dt.strftime("%b %-d")
                 except ValueError:
                     pass
-                new_title = f"{new_person_part} — {prop_part.strip()} — {short_date}"
+                type_sel = page["properties"].get("Type", {}).get("select")
+                entry_type = type_sel["name"] if type_sel else ""
+                icon = "\U0001F9F9" if entry_type == "Cleaner" else "\U0001F511"
+                new_title = f"{icon} {new_person_part} — {prop_part.strip()} — {short_date}"
                 if new_title != old_title:
                     props_patch["Name"] = {
                         "title": [{"text": {"content": new_title[:100]}}]
