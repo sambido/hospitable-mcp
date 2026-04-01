@@ -80,7 +80,7 @@ def ha_get_friendly_names():
         "Content-Type": "application/json",
         "User-Agent": "WeatherwoodSync/1.0",
     })
-    resp = urllib.request.urlopen(req, context=CTX, timeout=30)
+    resp = urllib.request.urlopen(req, context=CTX, timeout=60)
     states = json.loads(resp.read())
     names = {}
     for s in states:
@@ -101,7 +101,7 @@ def notion_request(method, path, payload=None):
         "Content-Type": "application/json",
     })
     try:
-        resp = urllib.request.urlopen(req, context=CTX, timeout=30)
+        resp = urllib.request.urlopen(req, context=CTX, timeout=60)
         return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         print(f"  Notion API error {e.code}: {e.read().decode()[:200]}")
