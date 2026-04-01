@@ -112,39 +112,36 @@ def main():
     updated = 0
     skipped = 0
     for page in pages:
+        # Skip if Lock Names already populated
+        existing_names = page["properties"].get("Lock Names", {}).get("rich_text", [])
+        if existing_names and existing_names[0].get("plain_text", ""):
+            skipped += 1
+            continue
+
         rt = page["properties"].get("Lock Entities Used", {}).get("rich_text", [])
         if not rt:
             skipped += 1
             continue
-        old_value = rt[0].get("plain_text", "")
-        if not old_value:
+        raw_value = rt[0].get("plain_text", "")
+        if not raw_value:
             skipped += 1
             continue
 
-        # Check if any part still looks like a raw entity ID (lock.xxx)
-        if not re.search(r"\block\.\w+", old_value):
-            skipped += 1
-            continue
-
-        # Replace each entity ID with its friendly name
-        parts = [p.strip() for p in old_value.split(",")]
-        new_parts = []
+        # Translate each entity ID to its friendly name
+        parts = [p.strip() for p in raw_value.split(",")]
+        friendly_parts = []
         for part in parts:
             if part in names:
-                new_parts.append(names[part])
+                friendly_parts.append(names[part])
             else:
-                new_parts.append(part)
-        new_value = ", ".join(new_parts)
+                friendly_parts.append(part)
+        friendly_value = ", ".join(friendly_parts)
 
-        if new_value == old_value:
-            skipped += 1
-            continue
-
-        # Update the page
+        # Write to new Lock Names column, leave Lock Entities Used untouched
         result = notion_request("PATCH", f"/pages/{page['id']}", {
             "properties": {
-                "Lock Entities Used": {
-                    "rich_text": [{"text": {"content": new_value[:200]}}]
+                "Lock Names": {
+                    "rich_text": [{"text": {"content": friendly_value[:200]}}]
                 }
             }
         })
@@ -152,7 +149,7 @@ def main():
             title_rt = page["properties"].get("Name", {}).get("title", [])
             title = title_rt[0]["plain_text"] if title_rt else page["id"]
             print(f"  Updated: {title}")
-            print(f"    {old_value} -> {new_value}")
+            print(f"    Lock Names: {friendly_value}")
             updated += 1
         else:
             print(f"  FAILED to update page {page['id']}")

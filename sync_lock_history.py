@@ -520,7 +520,8 @@ def find_cleaning_session(events, checkout_dt, checkin_dt, prop_uuid):
         "event_count": len(session_events),
         "minutes_after_checkout": max(minutes_after_checkout, 0),
         "minutes_before_checkin": minutes_before_checkin,
-        "entities_used": ", ".join(sorted(lock_display_name(e) for e in entities_used)),
+        "entities_used": ", ".join(sorted(entities_used)),
+        "lock_names": ", ".join(sorted(lock_display_name(e) for e in entities_used)),
     }
 
 
@@ -553,6 +554,7 @@ def find_guest_activity(events, checkin_dt, checkout_dt, prop_uuid, guest_name):
             "no_show": True,
             "late_checkout": False,
             "entities_used": "",
+        "lock_names": "",
         }
 
     first = guest_events[0]
@@ -570,7 +572,8 @@ def find_guest_activity(events, checkin_dt, checkout_dt, prop_uuid, guest_name):
         "event_count": len(guest_events),
         "no_show": False,
         "late_checkout": late_checkout,
-        "entities_used": ", ".join(sorted(lock_display_name(e) for e in entities_used)),
+        "entities_used": ", ".join(sorted(entities_used)),
+        "lock_names": ", ".join(sorted(lock_display_name(e) for e in entities_used)),
     }
 
 
@@ -658,6 +661,8 @@ def build_notion_props(entry_type, prop_uuid, prop_name, data, res_code,
         props["Event Count"] = {"number": data["event_count"]}
     if data.get("entities_used"):
         props["Lock Entities Used"] = {"rich_text": [{"text": {"content": data["entities_used"][:200]}}]}
+    if data.get("lock_names"):
+        props["Lock Names"] = {"rich_text": [{"text": {"content": data["lock_names"][:200]}}]}
 
     if entry_type == "Cleaner":
         if data.get("minutes_after_checkout") is not None:
