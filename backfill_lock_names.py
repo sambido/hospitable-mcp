@@ -208,6 +208,27 @@ def main():
                         "title": [{"text": {"content": new_title[:100]}}]
                     }
 
+        # --- Populate Clean Started/Finished or Checked In/Out from First/Last Event ---
+        type_sel = page["properties"].get("Type", {}).get("select")
+        entry_type = type_sel["name"] if type_sel else ""
+        first_evt = page["properties"].get("First Event", {}).get("date")
+        last_evt = page["properties"].get("Last Event", {}).get("date")
+
+        if entry_type == "Cleaner":
+            cs = page["properties"].get("Clean Started", {}).get("date")
+            cf = page["properties"].get("Clean Finished", {}).get("date")
+            if first_evt and not cs:
+                props_patch["Clean Started"] = {"date": first_evt}
+            if last_evt and not cf:
+                props_patch["Clean Finished"] = {"date": last_evt}
+        elif entry_type == "Guest":
+            ci = page["properties"].get("Checked In", {}).get("date")
+            co = page["properties"].get("Checked Out", {}).get("date")
+            if first_evt and not ci:
+                props_patch["Checked In"] = {"date": first_evt}
+            if last_evt and not co:
+                props_patch["Checked Out"] = {"date": last_evt}
+
         if not props_patch:
             skipped += 1
             continue

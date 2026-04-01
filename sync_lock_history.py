@@ -656,8 +656,16 @@ def build_notion_props(entry_type, prop_uuid, prop_name, data, res_code,
 
     if data.get("first_event"):
         props["First Event"] = {"date": {"start": data["first_event"].isoformat()}}
+        if entry_type == "Cleaner":
+            props["Clean Started"] = {"date": {"start": data["first_event"].isoformat()}}
+        else:
+            props["Checked In"] = {"date": {"start": data["first_event"].isoformat()}}
     if data.get("last_event"):
         props["Last Event"] = {"date": {"start": data["last_event"].isoformat()}}
+        if entry_type == "Cleaner":
+            props["Clean Finished"] = {"date": {"start": data["last_event"].isoformat()}}
+        else:
+            props["Checked Out"] = {"date": {"start": data["last_event"].isoformat()}}
 
     # Compute all three duration formats from total minutes
     total_min = data.get("duration")  # cleaners have this
@@ -749,6 +757,7 @@ def main():
     created = 0
     updated = 0
     skipped = 0
+    latest_activity = {}  # prop_uuid -> latest event datetime
 
     for prop_uuid, lock_entities in PROPERTY_LOCKS.items():
         prop_name = PROPERTIES.get(prop_uuid, prop_uuid)
@@ -810,6 +819,12 @@ def main():
             events = parse_ha_events(history) if history else []
             print(f"    Lock events: {len(events)}")
 
+            # Track latest event per property for STR Listings
+            if events:
+                last_ts = events[-1]["timestamp"]
+                if prop_uuid not in latest_activity or last_ts > latest_activity[prop_uuid]:
+                    latest_activity[prop_uuid] = last_ts
+
             # --- Cleaner row ---
             cleaner_key = f"{res_code}|Cleaner"
             cleaning = find_cleaning_session(events, checkout_dt,
@@ -855,6 +870,21 @@ def main():
                 status = "no-show" if guest_data.get("no_show") else f"{guest_data['event_count']} events"
                 print(f"    Guest: created ({guest_name}, {status})")
             time.sleep(0.4)
+
+    # Update Last Lock Activity on STR Listings
+    if latest_activity:
+        print(f"\n--- Updating Last Lock Activity on STR Listings ---")
+        for prop_uuid, last_ts in latest_activity.items():
+            notion_page_id = PROPERTY_NOTION_IDS.get(prop_uuid)
+            if notion_page_id:
+                notion_request("PATCH", f"/pages/{notion_page_id}", {
+                    "properties": {
+                        "Last Lock Activity": {"date": {"start": last_ts.isoformat()}}
+                    }
+                })
+                prop_name = PROPERTIES.get(prop_uuid, prop_uuid)
+                print(f"  {prop_name}: {last_ts.strftime('%b %-d %I:%M%p')}")
+                time.sleep(0.3)
 
     print(f"\n--- Done ---")
     print(f"Created: {created}, Updated: {updated}")
