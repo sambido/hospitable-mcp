@@ -149,15 +149,50 @@ def heading3_block(content):
 
 
 def code_block(content):
-    """Create a code block for formatted tables."""
-    return {
-        "object": "block",
-        "type": "code",
-        "code": {
-            "rich_text": [{"type": "text", "text": {"content": content}}],
-            "language": "plain text",
-        }
-    }
+    """Create one or more code blocks for formatted tables.
+
+    Notion limits rich_text content to 2000 chars per block, so split
+    on line boundaries if needed. Returns a list of blocks.
+    """
+    MAX_LEN = 1900  # leave margin
+    if len(content) <= MAX_LEN:
+        return [{
+            "object": "block",
+            "type": "code",
+            "code": {
+                "rich_text": [{"type": "text", "text": {"content": content}}],
+                "language": "plain text",
+            }
+        }]
+    # Split on line boundaries
+    blocks = []
+    lines = content.split("\n")
+    chunk = []
+    chunk_len = 0
+    for line in lines:
+        if chunk_len + len(line) + 1 > MAX_LEN and chunk:
+            blocks.append({
+                "object": "block",
+                "type": "code",
+                "code": {
+                    "rich_text": [{"type": "text", "text": {"content": "\n".join(chunk)}}],
+                    "language": "plain text",
+                }
+            })
+            chunk = []
+            chunk_len = 0
+        chunk.append(line)
+        chunk_len += len(line) + 1
+    if chunk:
+        blocks.append({
+            "object": "block",
+            "type": "code",
+            "code": {
+                "rich_text": [{"type": "text", "text": {"content": "\n".join(chunk)}}],
+                "language": "plain text",
+            }
+        })
+    return blocks
 
 
 def divider_block():
@@ -319,38 +354,33 @@ def main():
         text_block(f"Auto-generated {now.strftime('%B %d, %Y at %I:%M %p PT')}. "
                    f"Based on {len(cleaners)} cleaner sessions and {len(guests)} guest stays."),
         divider_block(),
-
         heading2_block("Cleaning Averages by Property"),
-        code_block(
-            f"{'Property':22s} {'Avg Duration':>12s}   {'Count':>8s}   {'Avg Start':>28s}   {'Same-day':>8s}\n"
-            + "-" * 90 + "\n"
-            + "\n".join(prop_lines)
-        ),
-
-        heading2_block("Cleaning Averages by Crew"),
-        code_block(
-            f"{'Crew':25s} {'Avg Duration':>12s}   {'Count':>8s}   {'Properties'}\n"
-            + "-" * 90 + "\n"
-            + "\n".join(crew_lines)
-        ),
-
-        heading2_block("Longest Cleaning Sessions"),
-        text_block("Cleans over 2.5 hours. May indicate return visits (laundry, inspection) within the 90-min session gap."),
-        code_block("\n".join(long_lines) if long_lines else "No cleans over 2.5 hours"),
-
-        heading2_block("Tightest Same-Day Turnovers"),
-        text_block("Shortest buffer between cleaner finishing and next guest check-in."),
-        code_block("\n".join(tight_lines) if tight_lines else "No same-day turnovers found"),
-
-        divider_block(),
-
-        heading2_block("Guest Activity by Property"),
-        code_block(
-            f"{'Property':22s} {'Avg Events':>12s}   {'Stays':>7s}   {'Late Checkouts'}\n"
-            + "-" * 70 + "\n"
-            + "\n".join(guest_prop_lines)
-        ),
-
+    ]
+    blocks.extend(code_block(
+        f"{'Property':22s} {'Avg Duration':>12s}   {'Count':>8s}   {'Avg Start':>28s}   {'Same-day':>8s}\n"
+        + "-" * 90 + "\n"
+        + "\n".join(prop_lines)
+    ))
+    blocks.append(heading2_block("Cleaning Averages by Crew"))
+    blocks.extend(code_block(
+        f"{'Crew':25s} {'Avg Duration':>12s}   {'Count':>8s}   {'Properties'}\n"
+        + "-" * 90 + "\n"
+        + "\n".join(crew_lines)
+    ))
+    blocks.append(heading2_block("Longest Cleaning Sessions"))
+    blocks.append(text_block("Cleans over 2.5 hours. May indicate return visits (laundry, inspection) within the 90-min session gap."))
+    blocks.extend(code_block("\n".join(long_lines) if long_lines else "No cleans over 2.5 hours"))
+    blocks.append(heading2_block("Tightest Same-Day Turnovers"))
+    blocks.append(text_block("Shortest buffer between cleaner finishing and next guest check-in."))
+    blocks.extend(code_block("\n".join(tight_lines) if tight_lines else "No same-day turnovers found"))
+    blocks.append(divider_block())
+    blocks.append(heading2_block("Guest Activity by Property"))
+    blocks.extend(code_block(
+        f"{'Property':22s} {'Avg Events':>12s}   {'Stays':>7s}   {'Late Checkouts'}\n"
+        + "-" * 70 + "\n"
+        + "\n".join(guest_prop_lines)
+    ))
+    blocks.extend([
         heading2_block("Summary Stats"),
         text_block(
             f"Total cleaner sessions: {len(cleaners)}\n"
@@ -359,7 +389,7 @@ def main():
             f"No-shows (no lock events): {len(no_shows)}\n"
             f"Same-day turnovers: {sum(1 for c in cleaners if c['same_day'])}"
         ),
-    ]
+    ])
 
     # Find or create dashboard page
     search = notion_request("POST", "/search", {
