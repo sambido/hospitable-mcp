@@ -1,0 +1,18 @@
+name: Backfill Lock Friendly Names
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python backfill_lock_names.py
+        env:
+          HA_TOKEN: ${{ secrets.HA_TOKEN }}
+          HA_URL: ${{ secrets.HA_URL }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}

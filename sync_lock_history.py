@@ -412,11 +412,27 @@ def fetch_reservations(property_uuid, start_date, end_date):
 # --------------------------------------------------------------------------- #
 # Lock event processing
 # --------------------------------------------------------------------------- #
+# entity_id -> friendly name, populated from HA history responses at runtime
+LOCK_FRIENDLY_NAMES = {}
+
+
+def lock_display_name(entity_id):
+    """Return the friendly name for a lock entity, falling back to entity_id."""
+    return LOCK_FRIENDLY_NAMES.get(entity_id, entity_id)
+
+
 def parse_ha_events(history_data):
     """Parse HA history API response into flat list of events sorted by time."""
     events = []
     for entity_events in history_data:
         for entry in entity_events:
+            # Capture friendly_name from HA attributes (populates once per entity)
+            eid = entry.get("entity_id", entity_events[0].get("entity_id", ""))
+            if eid and eid not in LOCK_FRIENDLY_NAMES:
+                fname = entry.get("attributes", {}).get("friendly_name", "")
+                if fname:
+                    LOCK_FRIENDLY_NAMES[eid] = fname
+
             state = entry.get("state", "")
             if state not in ("locked", "unlocked"):
                 continue
@@ -432,7 +448,7 @@ def parse_ha_events(history_data):
                 "timestamp": ts,
                 "state": state,
                 "changed_by": changed_by or "",
-                "entity_id": entry.get("entity_id", entity_events[0].get("entity_id", "")),
+                "entity_id": eid,
             })
     events.sort(key=lambda e: e["timestamp"])
     return events
@@ -504,7 +520,7 @@ def find_cleaning_session(events, checkout_dt, checkin_dt, prop_uuid):
         "event_count": len(session_events),
         "minutes_after_checkout": max(minutes_after_checkout, 0),
         "minutes_before_checkin": minutes_before_checkin,
-        "entities_used": ", ".join(sorted(entities_used)),
+        "entities_used": ", ".join(sorted(lock_display_name(e) for e in entities_used)),
     }
 
 
@@ -554,7 +570,7 @@ def find_guest_activity(events, checkin_dt, checkout_dt, prop_uuid, guest_name):
         "event_count": len(guest_events),
         "no_show": False,
         "late_checkout": late_checkout,
-        "entities_used": ", ".join(sorted(entities_used)),
+        "entities_used": ", ".join(sorted(lock_display_name(e) for e in entities_used)),
     }
 
 
