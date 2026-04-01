@@ -627,11 +627,10 @@ def build_notion_props(entry_type, prop_uuid, prop_name, data, res_code,
     date_str = checkout_dt.strftime("%Y-%m-%d")
     person = clean_person_name(data.get("person", "Unknown"))
     short_date = checkout_dt.strftime("%b %-d")
-    icon = "\U0001F9F9" if entry_type == "Cleaner" else "\U0001F511"  # broom / key
     if entry_type == "Cleaner":
-        title = f"{icon} {person} — \U0001F3E1 {prop_name} — {short_date}"
+        title = f"\U0001F9F9 {person} — \U0001F3E1 {prop_name} — {short_date}"
     else:
-        title = f"{icon} \U0001F3E1 {prop_name} — {person} — {short_date}"
+        title = f"\U0001F3E1 {prop_name} — \U0001F511 {person} — {short_date}"
 
     props = {
         "Name": {"title": [{"text": {"content": title[:100]}}]},

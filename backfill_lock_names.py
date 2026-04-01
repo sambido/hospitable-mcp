@@ -168,34 +168,41 @@ def main():
                 "rich_text": [{"text": {"content": clean_person[:100]}}]
             }
 
-        # Rebuild title: "Person — Property — Mon D"
+        # Rebuild title using Person field + property from title parts
         title_rt = page["properties"].get("Name", {}).get("title", [])
         old_title = title_rt[0]["plain_text"] if title_rt else ""
         if old_title and " — " in old_title:
             title_parts = old_title.split(" — ")
             if len(title_parts) == 3:
-                # Old format: "RawPerson — Property — YYYY-MM-DD"
-                old_person_part, prop_part, date_part = title_parts
-                # Strip ALL existing type emojis (🧹🔑) from person part
-                stripped_person = re.sub(r'^(?:[\U0001F9F9\U0001F511]\s*)+', '', old_person_part.strip())
-                new_person_part = clean_person_name(stripped_person)
-                # Convert "2026-03-22" to "Mar 22"
-                short_date = date_part.strip()
-                try:
-                    from datetime import datetime
-                    dt = datetime.strptime(short_date, "%Y-%m-%d")
-                    short_date = dt.strftime("%b %-d")
-                except ValueError:
-                    pass
                 type_sel = page["properties"].get("Type", {}).get("select")
                 entry_type = type_sel["name"] if type_sel else ""
-                icon = "\U0001F9F9" if entry_type == "Cleaner" else "\U0001F511"
-                # Strip any existing 🏡 prefix from prop_part
-                clean_prop = prop_part.strip().lstrip("\U0001F3E1").strip()
-                if entry_type == "Cleaner":
-                    new_title = f"{icon} {new_person_part} — \U0001F3E1 {clean_prop} — {short_date}"
+
+                # Strip all emojis from each part to find raw text
+                strip_emoji = lambda s: re.sub(r'[\U0001F300-\U0001FAFF]\s*', '', s).strip()
+                raw_parts = [strip_emoji(p) for p in title_parts]
+                date_part = raw_parts[2]
+
+                # Convert "2026-03-22" to "Mar 22"
+                try:
+                    from datetime import datetime
+                    dt = datetime.strptime(date_part, "%Y-%m-%d")
+                    date_part = dt.strftime("%b %-d")
+                except ValueError:
+                    pass
+
+                # Use the cleaned person name from Person field
+                person_name = clean_person
+
+                # Find property name: whichever of the first two parts isn't the person
+                if raw_parts[0] == person_name or clean_person_name(raw_parts[0]) == person_name:
+                    prop_name = raw_parts[1]
                 else:
-                    new_title = f"{icon} \U0001F3E1 {clean_prop} — {new_person_part} — {short_date}"
+                    prop_name = raw_parts[0]
+
+                if entry_type == "Cleaner":
+                    new_title = f"\U0001F9F9 {person_name} — \U0001F3E1 {prop_name} — {date_part}"
+                else:
+                    new_title = f"\U0001F3E1 {prop_name} — \U0001F511 {person_name} — {date_part}"
                 if new_title != old_title:
                     props_patch["Name"] = {
                         "title": [{"text": {"content": new_title[:100]}}]
