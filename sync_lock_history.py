@@ -585,14 +585,16 @@ def find_guest_activity(events, checkin_dt, checkout_dt, prop_uuid, guest_name,
     last = guest_events[-1]
     duration_hours = round((last["timestamp"] - first["timestamp"]).total_seconds() / 3600, 1)
 
-    # Checked Out = last guest event before cleaner arrives (actual departure)
+    # Checked Out = last guest lock event before cleaner arrives (actual departure)
+    # guest_events already excludes admin/cleaner/manual events, so admin visits
+    # between guest departure and cleaner arrival don't affect this
     if cleaner_start_dt:
         pre_cleaner = [e for e in guest_events if e["timestamp"] < cleaner_start_dt]
         checked_out = pre_cleaner[-1] if pre_cleaner else last
     else:
         checked_out = last
 
-    # Late checkout: last guest event > 30min after scheduled checkout
+    # Late checkout: guest departed > 30min after scheduled checkout
     late_checkout = checked_out["timestamp"] > checkout_dt + timedelta(minutes=30)
 
     return {
