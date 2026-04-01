@@ -2,7 +2,8 @@ name: Lock History Sync
 
 on:
   schedule:
-    - cron: '0 4 * * *'  # 8pm PST
+    - cron: '0 22 * * *'  # 2pm PST
+    - cron: '0 2 * * *'   # 6pm PST
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
