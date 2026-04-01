@@ -2,30 +2,36 @@ name: Recycling Reminders (DM)
 
 on:
   schedule:
-    - cron: '0 1 * * 1'   # 65th: Every Monday 01:00 UTC = Sunday 5pm PST (pickup Monday)
-    - cron: '46 1 * * 2'  # 8th: Every Tuesday 01:46 UTC = Monday 5:46pm PST (pickup Tuesday)
+    - cron: '0 1 * * 1'   # Every Monday 01:00 UTC = Sunday 5pm PST (65th pickup Monday)
+    - cron: '46 1 * * 2'  # Every Tuesday 01:46 UTC = Monday 5:46pm PST (8th pickup Tuesday)
   workflow_dispatch:
+    inputs:
+      property:
+        description: 'Property to check (65th, 8th, or blank for both)'
+        required: false
 
 jobs:
   remind:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine property
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Determine property from schedule
         id: prop
         run: |
-          # Monday UTC = Sunday PST = 65th reminder
-          # Tuesday UTC = Monday PST = 8th reminder
-          DOW=$(date -u +%u)
-          if [ "$DOW" = "1" ]; then
-            echo "property=65th" >> $GITHUB_OUTPUT
-            echo "day=Monday" >> $GITHUB_OUTPUT
+          if [ -n "${{ github.event.inputs.property }}" ]; then
+            echo "args=${{ github.event.inputs.property }}" >> $GITHUB_OUTPUT
           else
-            echo "property=8th" >> $GITHUB_OUTPUT
-            echo "day=Tuesday" >> $GITHUB_OUTPUT
+            DOW=$(date -u +%u)
+            if [ "$DOW" = "1" ]; then
+              echo "args=65th" >> $GITHUB_OUTPUT
+            else
+              echo "args=8th" >> $GITHUB_OUTPUT
+            fi
           fi
-      - name: Send DM reminder
+      - run: python recycling_reminder_dm.py ${{ steps.prop.outputs.args }}
         env:
+          HOSPITABLE_PAT: ${{ secrets.HOSPITABLE_PAT }}
           SLACK_DM_WEBHOOK_URL: ${{ secrets.SLACK_DM_WEBHOOK_URL }}
-        run: |
-          curl -s -X POST "$SLACK_DM_WEBHOOK_URL" -H 'Content-type: application/json' \
-            -d "{\"text\":\"♻️ *Recycling Reminder — ${{ steps.prop.outputs.property }}*\nPickup is ${{ steps.prop.outputs.day }}. Check if it's a recycling week and remind the guest if occupied.\"}"
