@@ -1,0 +1,31 @@
+name: Recycling Reminders (DM)
+
+on:
+  schedule:
+    - cron: '0 1 * * 1'   # 65th: Every Monday 01:00 UTC = Sunday 5pm PST (pickup Monday)
+    - cron: '46 1 * * 2'  # 8th: Every Tuesday 01:46 UTC = Monday 5:46pm PST (pickup Tuesday)
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine property
+        id: prop
+        run: |
+          # Monday UTC = Sunday PST = 65th reminder
+          # Tuesday UTC = Monday PST = 8th reminder
+          DOW=$(date -u +%u)
+          if [ "$DOW" = "1" ]; then
+            echo "property=65th" >> $GITHUB_OUTPUT
+            echo "day=Monday" >> $GITHUB_OUTPUT
+          else
+            echo "property=8th" >> $GITHUB_OUTPUT
+            echo "day=Tuesday" >> $GITHUB_OUTPUT
+          fi
+      - name: Send DM reminder
+        env:
+          SLACK_DM_WEBHOOK_URL: ${{ secrets.SLACK_DM_WEBHOOK_URL }}
+        run: |
+          curl -s -X POST "$SLACK_DM_WEBHOOK_URL" -H 'Content-type: application/json' \
+            -d "{\"text\":\"♻️ *Recycling Reminder — ${{ steps.prop.outputs.property }}*\nPickup is ${{ steps.prop.outputs.day }}. Check if it's a recycling week and remind the guest if occupied.\"}"
