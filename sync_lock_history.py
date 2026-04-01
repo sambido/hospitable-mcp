@@ -259,6 +259,24 @@ CLEANER_TEAM_MAP = {
     "owner: don and kathy": "don and kathy",
 }
 
+# Canonical team key -> clean display name
+CLEANER_DISPLAY_NAMES = {
+    "ana": "Ana Guayllas",
+    "gilda": "Gilda Camargo",
+    "jiselle": "Jay's Cleaning",
+    "don and kathy": "Don & Kathy",
+}
+
+
+def clean_person_name(raw_name):
+    """Convert raw changed_by person name to a clean display name."""
+    if not raw_name:
+        return raw_name
+    team_key = CLEANER_TEAM_MAP.get(raw_name.lower().strip())
+    if team_key:
+        return CLEANER_DISPLAY_NAMES.get(team_key, raw_name)
+    return raw_name
+
 
 def get_cleaning_team_id(person_name):
     """Look up the Cleaning Teams Notion page ID for a cleaner person name."""
@@ -607,8 +625,9 @@ def build_notion_props(entry_type, prop_uuid, prop_name, data, res_code,
                        checkout_dt, checkin_dt, same_day):
     """Build Notion properties dict for a lock activity entry."""
     date_str = checkout_dt.strftime("%Y-%m-%d")
-    person = data.get("person", "Unknown")
-    title = f"{person} — {prop_name} — {date_str}"
+    person = clean_person_name(data.get("person", "Unknown"))
+    short_date = checkout_dt.strftime("%b %-d")
+    title = f"{person} — {prop_name} — {short_date}"
 
     props = {
         "Name": {"title": [{"text": {"content": title[:100]}}]},
