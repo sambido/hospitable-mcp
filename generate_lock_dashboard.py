@@ -323,29 +323,8 @@ def main():
             f"clean took {fmt_duration(c['duration'])}"
         )
 
-    # ------------------------------------------------------------------ #
-    # GUEST STATS
-    # ------------------------------------------------------------------ #
     late_checkouts = [g for g in guests if g["late_checkout"]]
     no_shows = [g for g in guests if g["no_show"]]
-    guests_with_events = [g for g in guests if g["event_count"] and g["event_count"] > 0]
-
-    # Average events per stay by property
-    guest_by_prop = defaultdict(list)
-    for g in guests_with_events:
-        guest_by_prop[g["property"]].append(g)
-
-    guest_prop_lines = []
-    for prop in sorted(guest_by_prop.keys()):
-        entries_g = guest_by_prop[prop]
-        evts = [e["event_count"] for e in entries_g]
-        avg_evts = sum(evts) / len(evts)
-        lates = sum(1 for e in entries_g if e["late_checkout"])
-        guest_prop_lines.append(
-            f"{prop:22s} {avg_evts:5.1f} avg events   "
-            f"{len(entries_g):2d} stays   "
-            f"{lates} late checkouts"
-        )
 
     # ------------------------------------------------------------------ #
     # BUILD DASHBOARD PAGE
@@ -374,12 +353,6 @@ def main():
     blocks.append(text_block("Shortest buffer between cleaner finishing and next guest check-in."))
     blocks.extend(code_block("\n".join(tight_lines) if tight_lines else "No same-day turnovers found"))
     blocks.append(divider_block())
-    blocks.append(heading2_block("Guest Activity by Property"))
-    blocks.extend(code_block(
-        f"{'Property':22s} {'Avg Events':>12s}   {'Stays':>7s}   {'Late Checkouts'}\n"
-        + "-" * 70 + "\n"
-        + "\n".join(guest_prop_lines)
-    ))
     blocks.extend([
         heading2_block("Summary Stats"),
         text_block(
