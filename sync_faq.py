@@ -3,10 +3,11 @@
 Sync guest messages from Hospitable → classify with Claude API → push to Notion.
 
 Classifies messages into:
-  - FAQ → Guest FAQs database
-  - Maintenance → To-Do / Maintenance database
-  - Guest Request → Guest Requests database
+  - FAQ → Guest FAQs database (knowledge base / playbook)
+  - Action → Action Items database (inbox for things needing human action)
   - Skip → not actionable
+
+If an action item also matches an existing FAQ, the FAQ frequency is bumped too.
 
 Runs hourly via GitHub Actions. State persisted in Notion (Sync State page).
 """
@@ -42,8 +43,7 @@ CTX = ssl.create_default_context()
 
 # Notion database IDs
 FAQ_DB = "32550c17-99cc-8153-9499-c360b75733b1"
-MAINTENANCE_DB = "32550c17-99cc-8102-bcce-c3c10770785d"
-GUEST_REQUESTS_DB = "32450c17-99cc-8105-a317-f01a118f7a73"
+ACTION_ITEMS_DB = "33750c17-99cc-81d2-8fc7-c53c747abbc7"
 STR_LISTINGS_DB = "1eb50c17-99cc-8091-a8ea-e0ba6ec649ff"
 
 # Sync state — stored as a Notion page so GitHub Actions can persist across runs
@@ -100,26 +100,36 @@ def claude_classify(messages_batch, existing_faqs):
 You will receive guest messages from Airbnb/VRBO reservations. For each message, determine:
 
 1. TYPE: One of:
-   - "faq" — a question or concern other guests might also have (amenities, parking, check-in, wifi, appliances, local tips, property features)
-   - "maintenance" — reports a broken/damaged/malfunctioning item or a property issue that needs fixing
-   - "guest_request" — a specific request for this stay (early check-in, extra towels, package delivery, etc.)
-   - "skip" — not actionable: pure logistics ("arriving at 6pm"), confirmations ("ok thanks"), emoji-only, compliments, checkout messages, payment/billing questions
+   - "faq" — a question that has a standard answer and does NOT need human follow-up. The guest just needs information (amenities, parking, check-in instructions, wifi, local tips, property features). Hospitable's automated messages likely already answered it.
+   - "action" — someone needs to DO something for this specific guest/reservation. This includes:
+     * Requests: early check-in, late checkout, luggage drop-off, pet exception, refund, booking change
+     * Issues: broken/damaged/malfunctioning items, property problems needing repair
+     * Supply needs: extra towels, restocking, deliveries
+     * Info gaps: guest needs information NOT covered by standard FAQ/guidebook
+   - "skip" — not actionable: pure logistics ("arriving at 6pm"), confirmations ("ok thanks"), emoji-only, compliments, checkout messages, payment/billing questions handled by platform
+
+   KEY DISTINCTION: "Where's the wifi password?" = faq (standard answer exists). "The wifi isn't working" = action (someone needs to fix it). "Can we check in early?" = action (someone needs to check the calendar and decide).
 
 2. QUESTION: The core question or issue, distilled into a clean canonical form.
    For FAQ: "Is there a hair dryer?" not "hey do you guys happen to have a hair dryer?"
-   For Maintenance: "Dishwasher not draining" not "so the dishwasher seems to have some issue"
-   For Guest Request: "Early check-in request" not "would it be possible to maybe come a bit early"
+   For Action: "Early check-in request" or "Dishwasher not draining" — clear, concise, actionable
 
-3. CATEGORY: Best fit from these lists (you may return multiple categories as a comma-separated string when appropriate):
-   FAQ categories: Check-In, Check-Out, Parking & Transportation, Wifi & Tech, Kitchen, Cleaning & Laundry, Bedding & Linens, Baby & Family, Pets, Outdoor Spaces, Local Area & Dining, Property Layout, Safety & Emergencies, House Rules & Policies, Activities & Attractions
-   Category hints: Questions about fenced yards, dog-friendly spaces, or pet safety always include "Pets" (plus "Outdoor Spaces" if about a yard/patio).
-   Maintenance categories: Plumbing, Electrical, Appliance, HVAC, Structural, Cleaning, Pest, Exterior, Safety, Other
-   Guest Request categories: Early Check-in, Late Check-out, Extra Supplies, Special Occasion, Package Delivery, Transportation, Other
+3. For "faq" type:
+   - CATEGORY: Best fit from: Check-In, Check-Out, Parking & Transportation, Wifi & Tech, Kitchen, Cleaning & Laundry, Bedding & Linens, Baby & Family, Pets, Outdoor Spaces, Local Area & Dining, Property Layout, Safety & Emergencies, House Rules & Policies, Activities & Attractions
+   - EXISTING_MATCH: If it semantically matches any existing FAQ name (same topic, different wording), return the exact matched name. Otherwise null.
 
-4. EXISTING_MATCH: If type is "faq", check if it semantically matches any of these existing FAQ names (same topic, different wording counts as a match). Return the exact matched name or null if no match.
+4. For "action" type:
+   - ACTION_TYPE: One of: "Request", "Issue", "Supply", "Info"
+   - CATEGORY: Best fit from (comma-separated if multiple): Check-In, Check-Out, Pets, Booking & Policies, Plumbing, Electrical, HVAC, Appliances, Cleaning, Structural, Pest Control, Safety, Supplies & Restocking, Parking & Transportation, Outdoor Spaces
+   - PRIORITY: One of: "Urgent" (safety hazard, no water/heat, lock failure), "High" (broken appliance, major inconvenience), "Medium" (most requests), "Low" (nice-to-have, cosmetic)
+   - EXISTING_FAQ_MATCH: If the action item's topic matches an existing FAQ (e.g., early check-in request matches "Can I check in early?" FAQ), return the exact FAQ name. Otherwise null. This links the action to its playbook.
 
-Respond with a JSON array, one object per message. Example:
-[{"index": 0, "type": "faq", "question": "Is there parking available?", "category": "Parking & Transportation", "existing_match": "Where can I park?"}]"""
+Respond with a JSON array, one object per message.
+
+Examples:
+[{"index": 0, "type": "faq", "question": "Is there parking available?", "category": "Parking & Transportation", "existing_match": "Where can I park?"}]
+[{"index": 0, "type": "action", "question": "Early check-in request", "action_type": "Request", "category": "Check-In", "priority": "Medium", "existing_faq_match": "Can I check in early?"}]
+[{"index": 0, "type": "action", "question": "Dishwasher not draining", "action_type": "Issue", "category": "Appliances", "priority": "High", "existing_faq_match": null}]"""
 
     user_content = "EXISTING FAQ NAMES:\n" + json.dumps(faq_names) + "\n\nMESSAGES TO CLASSIFY:\n"
     for i, msg in enumerate(messages_batch):
@@ -263,47 +273,55 @@ def update_faq(page_id, current_freq, property_notion_id, current_listings):
     return notion_request("PATCH", f"/pages/{page_id}", {"properties": props})
 
 
-def create_maintenance(issue, category, property_notion_id, msg=None):
+def create_action_item(title, action_type, category, priority, property_notion_id,
+                       msg=None, faq_page_id=None):
+    """Create a row in the Action Items DB."""
     msg = msg or {}
-    # Use actual message date, not sync run time
-    date_reported = msg.get("created_at", "")[:10] or datetime.utcnow().strftime("%Y-%m-%d")
+    date_received = msg.get("created_at", "")[:10] or datetime.utcnow().strftime("%Y-%m-%d")
 
     props = {
-        "Task": {"title": [{"text": {"content": issue}}]},
-        "Category": {"multi_select": [{"name": c.strip()} for c in category.split(",")]},
-        "Status": {"select": {"name": "Not Started"}},
-        "Priority": {"select": {"name": "Medium"}},
-        "Source": {"select": {"name": "Guest Report"}},
-        "Reported Date": {"date": {"start": date_reported}},
-    }
-    if msg.get("guest_name"):
-        props["Guest Name"] = {"rich_text": [{"text": {"content": msg["guest_name"]}}]}
-    if msg.get("reservation_code"):
-        props["Reservation ID"] = {"rich_text": [{"text": {"content": msg["reservation_code"]}}]}
-    if property_notion_id:
-        props["STR Listing"] = {"relation": [{"id": property_notion_id}]}
-    return notion_request("POST", "/pages", {"parent": {"database_id": MAINTENANCE_DB}, "properties": props})
-
-
-def create_guest_request(request_text, category, property_notion_id, msg=None):
-    msg = msg or {}
-    # Parse date from message timestamp (e.g. "2026-03-15T10:30:00Z" → "2026-03-15")
-    date_requested = msg.get("created_at", "")[:10] or datetime.utcnow().strftime("%Y-%m-%d")
-
-    props = {
-        "Request": {"title": [{"text": {"content": request_text}}]},
-        "Request Type": {"select": {"name": category}},
-        "Date Requested": {"date": {"start": date_requested}},
-        "Decision": {"select": {"name": "Pending"}},
+        "Item": {"title": [{"text": {"content": title}}]},
+        "Type": {"select": {"name": action_type}},
+        "Status": {"select": {"name": "New"}},
+        "Priority": {"select": {"name": priority or "Medium"}},
         "Source": {"select": {"name": "Auto-detected"}},
+        "Date Received": {"date": {"start": date_received}},
     }
+
+    # Category (multi_select, comma-separated input)
+    if category:
+        valid = {"Check-In", "Check-Out", "Pets", "Booking & Policies",
+                 "Plumbing", "Electrical", "HVAC", "Appliances", "Cleaning",
+                 "Structural", "Pest Control", "Safety", "Supplies & Restocking",
+                 "Parking & Transportation", "Outdoor Spaces"}
+        cats = [c.strip() for c in category.split(",") if c.strip() in valid]
+        if cats:
+            props["Category"] = {"multi_select": [{"name": c} for c in cats]}
+
+    # Decision defaults: Pending for Requests, N/A for Issues/Supply/Info
+    if action_type == "Request":
+        props["Decision"] = {"select": {"name": "Pending"}}
+    else:
+        props["Decision"] = {"select": {"name": "N/A"}}
+
+    # Guest / reservation context
     if msg.get("guest_name"):
         props["Guest Name"] = {"rich_text": [{"text": {"content": msg["guest_name"]}}]}
     if msg.get("reservation_code"):
         props["Reservation ID"] = {"rich_text": [{"text": {"content": msg["reservation_code"]}}]}
+    if msg.get("body"):
+        snippet = msg["body"][:200].strip()
+        props["Guest Message Snippet"] = {"rich_text": [{"text": {"content": snippet}}]}
+
+    # Property relation
     if property_notion_id:
         props["Property"] = {"relation": [{"id": property_notion_id}]}
-    return notion_request("POST", "/pages", {"parent": {"database_id": GUEST_REQUESTS_DB}, "properties": props})
+
+    # FAQ link (if action item matches an existing FAQ)
+    if faq_page_id:
+        props["FAQ Link"] = {"relation": [{"id": faq_page_id}]}
+
+    return notion_request("POST", "/pages", {"parent": {"database_id": ACTION_ITEMS_DB}, "properties": props})
 
 
 # --------------------------------------------------------------------------- #
@@ -408,8 +426,7 @@ def main():
     # Step 7: Classify with Claude API (batch up to 20 at a time)
     faq_created = 0
     faq_updated = 0
-    maintenance_created = 0
-    request_created = 0
+    action_created = 0
     skipped = 0
 
     for i in range(0, len(all_messages), 20):
@@ -428,13 +445,12 @@ def main():
             msg_type = cls.get("type", "skip")
             question = cls.get("question", "")
             category = cls.get("category", "Other")
-            existing_match = cls.get("existing_match")
 
             prop_notion_id = property_notion_ids.get(msg["property_uuid"])
 
             if msg_type == "faq":
+                existing_match = cls.get("existing_match")
                 if existing_match:
-                    # Find the matched FAQ and update it
                     matched = next((f for f in existing_faqs if f["name"] == existing_match), None)
                     if matched:
                         update_faq(matched["page_id"], matched["frequency"], prop_notion_id, matched["listings"])
@@ -451,15 +467,28 @@ def main():
                     faq_created += 1
                     print(f"  FAQ created: {question}")
 
-            elif msg_type == "maintenance":
-                create_maintenance(question, category, prop_notion_id, msg)
-                maintenance_created += 1
-                print(f"  Maintenance: {question}")
+            elif msg_type == "action":
+                action_type = cls.get("action_type", "Issue")
+                priority = cls.get("priority", "Medium")
 
-            elif msg_type == "guest_request":
-                create_guest_request(question, category, prop_notion_id, msg)
-                request_created += 1
-                print(f"  Request: {question}")
+                # Check if this action matches an existing FAQ (for linking)
+                faq_match_name = cls.get("existing_faq_match")
+                faq_page_id = None
+                if faq_match_name:
+                    matched_faq = next((f for f in existing_faqs if f["name"] == faq_match_name), None)
+                    if matched_faq:
+                        faq_page_id = matched_faq["page_id"]
+                        # Also bump the FAQ frequency since this topic came up again
+                        update_faq(matched_faq["page_id"], matched_faq["frequency"],
+                                   prop_notion_id, matched_faq["listings"])
+                        matched_faq["frequency"] += 1
+                        faq_updated += 1
+                        print(f"  FAQ bumped: {faq_match_name} (+1)")
+
+                create_action_item(question, action_type, category, priority,
+                                   prop_notion_id, msg, faq_page_id)
+                action_created += 1
+                print(f"  Action [{action_type}]: {question}")
 
             else:
                 skipped += 1
@@ -473,9 +502,8 @@ def main():
     print(f"\n=== Sync Complete ===")
     print(f"  Messages processed: {len(all_messages)}")
     print(f"  FAQs created: {faq_created}")
-    print(f"  FAQs updated: {faq_updated}")
-    print(f"  Maintenance items: {maintenance_created}")
-    print(f"  Guest requests: {request_created}")
+    print(f"  FAQs updated (incl. action bumps): {faq_updated}")
+    print(f"  Action items created: {action_created}")
     print(f"  Skipped: {skipped}")
 
 
