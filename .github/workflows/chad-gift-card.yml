@@ -1,0 +1,28 @@
+name: Chad Gift Card Reminder
+on:
+  schedule:
+    - cron: '0 15 * * *'  # 8am PT daily (15:00 UTC)
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run gift card check
+        env:
+          HOSPITABLE_PAT: ${{ secrets.HOSPITABLE_PAT }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          QUO_API_KEY: ${{ secrets.QUO_API_KEY }}
+        run: python chad_gift_card.py
+      - name: Notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"Chad gift card automation failed. <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"}"
