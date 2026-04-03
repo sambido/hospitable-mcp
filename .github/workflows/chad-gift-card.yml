@@ -1,7 +1,9 @@
 name: Chad Gift Card Reminder
 on:
   schedule:
-    - cron: '0 15 * * *'  # 8am PT daily (15:00 UTC)
+    - cron: '0 21 * * *'  # 1pm PT (3-day reminder)
+    - cron: '0 19 * * *'  # 11am PT (day-before reminder)
+    - cron: '0 17 * * *'  # 9am PT (morning-of reminder)
   workflow_dispatch: {}
 
 jobs:
