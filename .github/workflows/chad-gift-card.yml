@@ -1,8 +1,10 @@
 name: Chad Gift Card Reminder
 on:
   schedule:
-    # Run at 16, 18, 20 UTC — covers 9am/11am/1pm in both PST and PDT
+    # Run at 16, 18, 20, 21 UTC — covers 9am/11am/1pm in both PST and PDT
     # The script checks actual Pacific time and only sends the matching message
+    # 21:05 UTC is temporary for testing (2:05pm PDT on Apr 3)
+    - cron: '5 21 * * *'
     - cron: '0 16 * * *'
     - cron: '0 18 * * *'
     - cron: '0 20 * * *'

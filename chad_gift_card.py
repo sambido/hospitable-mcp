@@ -238,8 +238,8 @@ def main():
         print(f"  {full_name}: {nights} nights, check-in {checkin} ({days_until} days away)")
 
         # Dispatch based on days_until AND current Pacific hour
-        # 3 days before at 1pm PT
-        if days_until == 3 and 12 <= current_hour <= 14:
+        # 3 days before at 1pm PT (window 12-15 to handle cron drift)
+        if days_until == 3 and 12 <= current_hour <= 15:
             message = (
                 f"Hey Chad, the guest {first_name} checking into #302 on "
                 f"{friendly_date} is staying {nights} nights. Can you get the "
