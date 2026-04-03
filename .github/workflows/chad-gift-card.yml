@@ -1,13 +1,10 @@
 name: Chad Gift Card Reminder
 on:
   schedule:
-    # Run at 16, 18, 20, 21 UTC — covers 9am/11am/1pm in both PST and PDT
-    # The script checks actual Pacific time and only sends the matching message
-    # 20:50 UTC is temporary for testing (~1:50pm PDT on Apr 3)
-    - cron: '50 20 * * *'
-    - cron: '0 16 * * *'
-    - cron: '0 18 * * *'
-    - cron: '0 20 * * *'
+    # Script checks actual Pacific time (auto PST/PDT) before sending
+    - cron: '0 16 * * *'   # 9am PT — morning-of reminder
+    - cron: '0 18 * * *'   # 11am PT — day-before reminder
+    - cron: '0 20 * * *'   # 1pm PT — 3-day reminder
   workflow_dispatch: {}
 
 jobs:
