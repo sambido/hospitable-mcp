@@ -10,7 +10,15 @@ Runs daily via GitHub Actions.
 """
 
 import json, os, ssl, urllib.request, urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# Pacific time: auto-handles PST/PDT
+try:
+    from zoneinfo import ZoneInfo
+    PACIFIC = ZoneInfo("America/Los_Angeles")
+except ImportError:
+    # Python 3.8 fallback
+    PACIFIC = timezone(timedelta(hours=-7))  # approximate PDT
 
 # --------------------------------------------------------------------------- #
 # Config
@@ -167,8 +175,10 @@ def create_gift_card_action_item(guest_name, checkin_date, reservation_code, nig
 # Main
 # --------------------------------------------------------------------------- #
 def main():
-    today = datetime.utcnow().date()
-    print(f"=== Chad Gift Card Check: {today} ===")
+    now_pacific = datetime.now(PACIFIC)
+    today = now_pacific.date()
+    current_hour = now_pacific.hour
+    print(f"=== Chad Gift Card Check: {today} {now_pacific.strftime('%-I:%M %p')} PT ===")
 
     # Look at check-ins in the next 4 days (catches 3-day, 1-day, and morning-of windows)
     start = today.isoformat()
@@ -227,8 +237,9 @@ def main():
 
         print(f"  {full_name}: {nights} nights, check-in {checkin} ({days_until} days away)")
 
-        # 3 days before: initial text + create action item
-        if days_until == 3:
+        # Dispatch based on days_until AND current Pacific hour
+        # 3 days before at 1pm PT
+        if days_until == 3 and 12 <= current_hour <= 14:
             message = (
                 f"Hey Chad, the guest {first_name} checking into #302 on "
                 f"{friendly_date} is staying {nights} nights. Can you get the "
@@ -244,8 +255,8 @@ def main():
             else:
                 print(f"  Action item already exists")
 
-        # 1 day before: follow-up reminder
-        elif days_until == 1:
+        # 1 day before at 11am PT
+        elif days_until == 1 and 10 <= current_hour <= 12:
             message = (
                 f"Reminder: {first_name} checks into #302 tomorrow. "
                 f"$50 Sea Creatures gift card to the front door between 11am - 4pm. Thanks!"
@@ -253,8 +264,8 @@ def main():
             send_text(CHAD_PHONE, message)
             print(f"  Day-before reminder sent")
 
-        # Morning of check-in
-        elif days_until == 0:
+        # Morning of check-in at 9am PT
+        elif days_until == 0 and 8 <= current_hour <= 10:
             message = (
                 f"Today's the day! {first_name} checking into #302. "
                 f"$50 Sea Creatures gift card to the front door between 11am - 4pm. Thanks Chad!"
@@ -263,7 +274,7 @@ def main():
             print(f"  Morning-of reminder sent")
 
         else:
-            print(f"  No action needed today ({days_until} days away)")
+            print(f"  No action needed right now ({days_until} days away, {current_hour}:00 PT)")
 
     print("Done")
 
