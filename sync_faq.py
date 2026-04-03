@@ -263,26 +263,44 @@ def update_faq(page_id, current_freq, property_notion_id, current_listings):
     return notion_request("PATCH", f"/pages/{page_id}", {"properties": props})
 
 
-def create_maintenance(issue, category, property_notion_id):
+def create_maintenance(issue, category, property_notion_id, msg=None):
+    msg = msg or {}
+    # Use actual message date, not sync run time
+    date_reported = msg.get("created_at", "")[:10] or datetime.utcnow().strftime("%Y-%m-%d")
+
     props = {
-        "Name": {"title": [{"text": {"content": issue}}]},
-        "Category": {"select": {"name": category}},
-        "Status": {"select": {"name": "New"}},
+        "Task": {"title": [{"text": {"content": issue}}]},
+        "Category": {"multi_select": [{"name": c.strip()} for c in category.split(",")]},
+        "Status": {"select": {"name": "Not Started"}},
         "Priority": {"select": {"name": "Medium"}},
         "Source": {"select": {"name": "Guest Report"}},
-        "Date Reported": {"date": {"start": datetime.utcnow().strftime("%Y-%m-%d")}},
+        "Reported Date": {"date": {"start": date_reported}},
     }
+    if msg.get("guest_name"):
+        props["Guest Name"] = {"rich_text": [{"text": {"content": msg["guest_name"]}}]}
+    if msg.get("reservation_code"):
+        props["Reservation ID"] = {"rich_text": [{"text": {"content": msg["reservation_code"]}}]}
     if property_notion_id:
-        props["Property"] = {"relation": [{"id": property_notion_id}]}
+        props["STR Listing"] = {"relation": [{"id": property_notion_id}]}
     return notion_request("POST", "/pages", {"parent": {"database_id": MAINTENANCE_DB}, "properties": props})
 
 
-def create_guest_request(request_text, category, property_notion_id):
+def create_guest_request(request_text, category, property_notion_id, msg=None):
+    msg = msg or {}
+    # Parse date from message timestamp (e.g. "2026-03-15T10:30:00Z" → "2026-03-15")
+    date_requested = msg.get("created_at", "")[:10] or datetime.utcnow().strftime("%Y-%m-%d")
+
     props = {
-        "Name": {"title": [{"text": {"content": request_text}}]},
-        "Category": {"select": {"name": category}},
-        "Status": {"select": {"name": "New"}},
+        "Request": {"title": [{"text": {"content": request_text}}]},
+        "Request Type": {"select": {"name": category}},
+        "Date Requested": {"date": {"start": date_requested}},
+        "Decision": {"select": {"name": "Pending"}},
+        "Source": {"select": {"name": "Auto-detected"}},
     }
+    if msg.get("guest_name"):
+        props["Guest Name"] = {"rich_text": [{"text": {"content": msg["guest_name"]}}]}
+    if msg.get("reservation_code"):
+        props["Reservation ID"] = {"rich_text": [{"text": {"content": msg["reservation_code"]}}]}
     if property_notion_id:
         props["Property"] = {"relation": [{"id": property_notion_id}]}
     return notion_request("POST", "/pages", {"parent": {"database_id": GUEST_REQUESTS_DB}, "properties": props})
@@ -361,11 +379,16 @@ def main():
                 if stripped.rstrip("!.") in skip_phrases:
                     continue
 
+                guest = res.get("guest", {}) or {}
+                guest_name = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip() or ""
+
                 all_messages.append({
                     "body": body,
                     "property_uuid": prop_uuid,
                     "property_name": prop_name,
                     "reservation_id": res["id"],
+                    "reservation_code": res.get("reservation_code", ""),
+                    "guest_name": guest_name,
                     "created_at": created,
                 })
 
@@ -429,12 +452,12 @@ def main():
                     print(f"  FAQ created: {question}")
 
             elif msg_type == "maintenance":
-                create_maintenance(question, category, prop_notion_id)
+                create_maintenance(question, category, prop_notion_id, msg)
                 maintenance_created += 1
                 print(f"  Maintenance: {question}")
 
             elif msg_type == "guest_request":
-                create_guest_request(question, category, prop_notion_id)
+                create_guest_request(question, category, prop_notion_id, msg)
                 request_created += 1
                 print(f"  Request: {question}")
 
