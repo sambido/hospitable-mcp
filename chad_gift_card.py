@@ -103,11 +103,14 @@ def send_text(to, message):
         "to": [to],
     }).encode()
 
+    # Strip whitespace from API key (GitHub secrets can add trailing newlines)
+    api_key = QUO_API_KEY.strip()
+
     req = urllib.request.Request(
         "https://api.openphone.com/v1/messages",
         data=body,
         headers={
-            "Authorization": QUO_API_KEY,
+            "Authorization": api_key,
             "Content-Type": "application/json",
         },
         method="POST",
@@ -118,7 +121,9 @@ def send_text(to, message):
         print(f"  Text sent to {to}: {result.get('data', {}).get('id', 'ok')}")
         return True
     except urllib.error.HTTPError as e:
-        print(f"  Quo error {e.code}: {e.read().decode()[:200]}")
+        err_body = e.read().decode()[:300]
+        print(f"  Quo error {e.code}: {err_body}")
+        print(f"  API key length: {len(api_key)}, starts with: {api_key[:8]}...")
         return False
 
 
