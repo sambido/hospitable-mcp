@@ -170,7 +170,7 @@ def main():
     today = datetime.utcnow().date()
     print(f"=== Chad Gift Card Check: {today} ===")
 
-    # Look at check-ins in the next 4 days (catches both 3-day and 1-day windows)
+    # Look at check-ins in the next 4 days (catches 3-day, 1-day, and morning-of windows)
     start = today.isoformat()
     end = (today + timedelta(days=4)).isoformat()
 
@@ -213,24 +213,33 @@ def main():
             continue
 
         guest = res.get("guest", {}) or {}
-        guest_name = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip() or "Guest"
+        first_name = guest.get("first_name", "").strip() or "Guest"
+        full_name = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip() or "Guest"
         res_code = res.get("reservation_code", res.get("id", ""))
 
         days_until = (checkin_dt - today).days
-        print(f"  {guest_name}: {nights} nights, check-in {checkin} ({days_until} days away)")
+        # Friendly date formatting: "Monday, April 6th"
+        day_of_week = checkin_dt.strftime("%A")
+        month_day = checkin_dt.strftime("%B %-d")
+        day_num = checkin_dt.day
+        suffix = "th" if 11 <= day_num <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day_num % 10, "th")
+        friendly_date = f"{day_of_week}, {month_day}{suffix}"
+
+        print(f"  {full_name}: {nights} nights, check-in {checkin} ({days_until} days away)")
 
         # 3 days before: initial text + create action item
         if days_until == 3:
             message = (
-                f"Hey Chad, {guest_name} checking into #302 on {checkin} "
-                f"is staying {nights} nights. Can you get the $50 Sea Creatures "
-                f"gift card and deliver between 11am - 4pm on check-in day? "
-                f"I'll send another reminder the day prior"
+                f"Hey Chad, the guest {first_name} checking into #302 on "
+                f"{friendly_date} is staying {nights} nights. Can you get the "
+                f"$50 Sea Creatures gift card and deliver between 11am - 4pm "
+                f"on {day_of_week}? I'll send another reminder the day prior "
+                f"and the morning-of."
             )
             send_text(CHAD_PHONE, message)
 
             if not action_item_exists(res_code):
-                create_gift_card_action_item(guest_name, checkin, res_code, nights)
+                create_gift_card_action_item(full_name, checkin, res_code, nights)
                 print(f"  Action item created")
             else:
                 print(f"  Action item already exists")
@@ -238,11 +247,20 @@ def main():
         # 1 day before: follow-up reminder
         elif days_until == 1:
             message = (
-                f"Reminder: {guest_name} checks in tomorrow at #302. "
-                f"$50 Sea Creatures gift card to front door between 11am-4pm. Thanks!"
+                f"Reminder: {first_name} checks into #302 tomorrow. "
+                f"$50 Sea Creatures gift card to the front door between 11am - 4pm. Thanks!"
             )
             send_text(CHAD_PHONE, message)
-            print(f"  Follow-up reminder sent")
+            print(f"  Day-before reminder sent")
+
+        # Morning of check-in
+        elif days_until == 0:
+            message = (
+                f"Today's the day! {first_name} checking into #302. "
+                f"$50 Sea Creatures gift card to the front door between 11am - 4pm. Thanks Chad!"
+            )
+            send_text(CHAD_PHONE, message)
+            print(f"  Morning-of reminder sent")
 
         else:
             print(f"  No action needed today ({days_until} days away)")
