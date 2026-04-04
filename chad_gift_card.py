@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Chad Gift Card Automation
+Gift Card Automation — Chad's Phinney Flat (#302)
 
 For stays 5+ nights at Chad's European Inspired Phinney Flat:
-- 3 days before check-in: Text Chad + create Action Item in Notion
-- 1 day before check-in: Follow-up reminder text to Chad
+- 1 day before check-in at 11am PT: Text Bryant to send $50 Sea Creatures gift card
+- Day of check-in at 12pm PT: Follow-up if Bryant hasn't replied
 
 Runs daily via GitHub Actions.
 """
@@ -12,13 +12,11 @@ Runs daily via GitHub Actions.
 import json, os, ssl, urllib.request, urllib.error
 from datetime import datetime, timedelta, timezone
 
-# Pacific time: auto-handles PST/PDT
 try:
     from zoneinfo import ZoneInfo
     PACIFIC = ZoneInfo("America/Los_Angeles")
 except ImportError:
-    # Python 3.8 fallback
-    PACIFIC = timezone(timedelta(hours=-7))  # approximate PDT
+    PACIFIC = timezone(timedelta(hours=-7))
 
 # --------------------------------------------------------------------------- #
 # Config
@@ -48,14 +46,17 @@ CTX = ssl.create_default_context()
 # Chad's property
 CHAD_PROPERTY_UUID = "eefb5918-5149-4b4e-bdd0-277754409cb0"
 CHAD_PROPERTY_NOTION_ID = "32050c17-99cc-8188-9bfd-f23a4cc8c028"
-CHAD_PHONE = "+17343201846"
 MIN_NIGHTS = 5
+
+# Bryant (gift card coordinator)
+BRYANT_PHONE = "+12065025344"
 
 # Quo (OpenPhone)
 QUO_FROM = "PNI52JLEHJ"  # eSam Automations (206) 350-3726
 
 # Notion
 ACTION_ITEMS_DB = "33750c17-99cc-81d2-8fc7-c53c747abbc7"
+GUEST_CONTACTS_DB = "32950c17-99cc-810b-b234-e3f653240342"
 
 HOSPITABLE_BASE = "https://public.api.hospitable.com/v2"
 
@@ -97,14 +98,13 @@ def send_text(to, message):
         print(f"  [DRY RUN] Would text {to}: {message}")
         return True
 
+    api_key = QUO_API_KEY.strip()
+
     body = json.dumps({
         "content": message,
         "from": QUO_FROM,
         "to": [to],
     }).encode()
-
-    # Strip whitespace from API key (GitHub secrets can add trailing newlines)
-    api_key = QUO_API_KEY.strip()
 
     req = urllib.request.Request(
         "https://api.openphone.com/v1/messages",
@@ -125,6 +125,64 @@ def send_text(to, message):
         print(f"  Quo error {e.code}: {err_body}")
         print(f"  API key length: {len(api_key)}, starts with: {api_key[:8]}...")
         return False
+
+
+def check_for_reply(from_phone, since_hours=24):
+    """Check if we received a reply from a phone number in the last N hours."""
+    if not QUO_API_KEY:
+        print(f"  [DRY RUN] Would check for reply from {from_phone}")
+        return False
+
+    api_key = QUO_API_KEY.strip()
+
+    req = urllib.request.Request(
+        f"https://api.openphone.com/v1/messages?phoneNumberId={QUO_FROM}&participants={from_phone}&maxResults=5",
+        headers={
+            "Authorization": api_key,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        resp = urllib.request.urlopen(req, context=CTX)
+        result = json.loads(resp.read())
+        messages = result.get("data", [])
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).isoformat()
+
+        for msg in messages:
+            # Look for incoming messages from Bryant after our outgoing text
+            if msg.get("direction") == "incoming" and msg.get("createdAt", "") > cutoff:
+                print(f"  Reply found from {from_phone}: \"{msg.get('content', '')[:80]}\"")
+                return True
+
+        print(f"  No reply from {from_phone} in last {since_hours} hours")
+        return False
+    except urllib.error.HTTPError as e:
+        print(f"  Quo error checking replies: {e.code}")
+        return False
+
+
+# --------------------------------------------------------------------------- #
+# Guest email lookup from Notion Guest Contacts
+# --------------------------------------------------------------------------- #
+def get_guest_email(guest_name):
+    """Look up guest email from Guest Contacts DB by name + property."""
+    for filter_type in ["equals", "contains"]:
+        result = notion_request("POST", f"/databases/{GUEST_CONTACTS_DB}/query", {
+            "filter": {
+                "and": [
+                    {"property": "Name", "title": {filter_type: guest_name}},
+                    {"property": "Property", "select": {"equals": "Chad"}},
+                ]
+            },
+            "page_size": 1,
+            "sorts": [{"property": "Check-in", "direction": "descending"}],
+        })
+        if result and result.get("results"):
+            email = result["results"][0]["properties"].get("Email", {}).get("email", "")
+            if email:
+                return email
+    return ""
 
 
 # --------------------------------------------------------------------------- #
@@ -156,13 +214,12 @@ def create_gift_card_action_item(guest_name, checkin_date, reservation_code, nig
         "Priority": {"select": {"name": "Medium"}},
         "Source": {"select": {"name": "Auto-detected"}},
         "Decision": {"select": {"name": "Approved"}},
-        "Date Received": {"date": {"start": datetime.utcnow().strftime("%Y-%m-%d")}},
+        "Date Received": {"date": {"start": datetime.now(PACIFIC).strftime("%Y-%m-%d")}},
         "Due Date": {"date": {"start": checkin_date}},
         "Property": {"relation": [{"id": CHAD_PROPERTY_NOTION_ID}]},
         "Outcome Notes": {"rich_text": [{"text": {"content":
             f"$50 Sea Creatures gift card. Guest checking in {checkin_date}. "
-            f"Chad delivers to front door of #302 between 11am-4pm on check-in day. "
-            f"Text sent to Chad at {CHAD_PHONE}."
+            f"Text sent to Bryant at {BRYANT_PHONE}."
         }}]},
     }
     if guest_name:
@@ -177,17 +234,30 @@ def create_gift_card_action_item(guest_name, checkin_date, reservation_code, nig
 
 
 # --------------------------------------------------------------------------- #
+# Date formatting
+# --------------------------------------------------------------------------- #
+def friendly_date(date_str):
+    """'2026-04-06' -> 'Monday, April 6th'"""
+    dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+    day_of_week = dt.strftime("%A")
+    month_day = dt.strftime("%B %-d")
+    day_num = dt.day
+    suffix = "th" if 11 <= day_num <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day_num % 10, "th")
+    return f"{day_of_week}, {month_day}{suffix}"
+
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 def main():
     now_pacific = datetime.now(PACIFIC)
     today = now_pacific.date()
     current_hour = now_pacific.hour
-    print(f"=== Chad Gift Card Check: {today} {now_pacific.strftime('%-I:%M %p')} PT ===")
+    print(f"=== Gift Card Check: {today} {now_pacific.strftime('%-I:%M %p')} PT ===")
 
-    # Look at check-ins in the next 4 days (catches 3-day, 1-day, and morning-of windows)
+    # Look at check-ins in the next 2 days (catches day-before and day-of windows)
     start = today.isoformat()
-    end = (today + timedelta(days=4)).isoformat()
+    end = (today + timedelta(days=2)).isoformat()
 
     try:
         res_resp = hospitable_get("/reservations", {
@@ -233,26 +303,29 @@ def main():
         res_code = res.get("reservation_code", res.get("id", ""))
 
         days_until = (checkin_dt - today).days
-        # Friendly date formatting: "Monday, April 6th"
         day_of_week = checkin_dt.strftime("%A")
-        month_day = checkin_dt.strftime("%B %-d")
-        day_num = checkin_dt.day
-        suffix = "th" if 11 <= day_num <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day_num % 10, "th")
-        friendly_date = f"{day_of_week}, {month_day}{suffix}"
+        checkin_friendly = friendly_date(checkin)
+
+        # Look up guest email from Guest Contacts
+        guest_email = get_guest_email(full_name)
 
         print(f"  {full_name}: {nights} nights, check-in {checkin} ({days_until} days away)")
+        print(f"  Email: {guest_email or 'N/A'}")
 
-        # Dispatch based on days_until AND current Pacific hour
-        # 3 days before at 1pm PT (window 12-15 to handle cron drift)
-        if days_until == 3 and 12 <= current_hour <= 15:
+        # Day before at 11am PT: initial text to Bryant
+        if days_until == 1 and 10 <= current_hour <= 12:
             message = (
-                f"Hey Chad, the guest {first_name} checking into #302 on "
-                f"{friendly_date} is staying {nights} nights. Can you get the "
-                f"$50 Sea Creatures gift card and deliver between 11am - 4pm "
-                f"on {day_of_week}? I'll send another reminder the day prior "
-                f"and the morning-of."
+                f"Hey Bryant, the Airbnb guest {first_name} checking in on "
+                f"{checkin_friendly} is staying >5 nights so we've promised a perk. "
+                f"Can you send the $50 Sea Creatures gift card before 4pm check-in "
+                f"on {day_of_week}?"
             )
-            send_text(CHAD_PHONE, message)
+            if guest_email:
+                message += f"\nGuest Email: {guest_email}"
+            else:
+                message += "\nGuest Email: not available yet"
+
+            send_text(BRYANT_PHONE, message)
 
             if not action_item_exists(res_code):
                 create_gift_card_action_item(full_name, checkin, res_code, nights)
@@ -260,23 +333,19 @@ def main():
             else:
                 print(f"  Action item already exists")
 
-        # 1 day before at 11am PT
-        elif days_until == 1 and 10 <= current_hour <= 12:
-            message = (
-                f"Reminder: {first_name} checks into #302 tomorrow. "
-                f"$50 Sea Creatures gift card to the front door between 11am - 4pm. Thanks!"
-            )
-            send_text(CHAD_PHONE, message)
-            print(f"  Day-before reminder sent")
+        # Day of at 12pm PT: follow-up only if Bryant hasn't replied
+        elif days_until == 0 and 11 <= current_hour <= 13:
+            has_replied = check_for_reply(BRYANT_PHONE, since_hours=26)
 
-        # Morning of check-in at 9am PT
-        elif days_until == 0 and 8 <= current_hour <= 10:
-            message = (
-                f"Today's the day! {first_name} checking into #302. "
-                f"$50 Sea Creatures gift card to the front door between 11am - 4pm. Thanks Chad!"
-            )
-            send_text(CHAD_PHONE, message)
-            print(f"  Morning-of reminder sent")
+            if not has_replied:
+                message = (
+                    "Hey Bryant, just confirming you've sent the gift card "
+                    "to the guest. Let me know. Thanks!"
+                )
+                send_text(BRYANT_PHONE, message)
+                print(f"  Follow-up sent (no reply detected)")
+            else:
+                print(f"  Bryant already replied, skipping follow-up")
 
         else:
             print(f"  No action needed right now ({days_until} days away, {current_hour}:00 PT)")
