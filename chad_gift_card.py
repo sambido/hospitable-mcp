@@ -334,7 +334,7 @@ def main():
                     f"Hey Bryant, the Airbnb guest {first_name} checking in on "
                     f"{checkin_friendly} is staying >5 nights so we've promised a perk. "
                     f"Can you send the $50 Sea Creatures gift card before 4pm check-in "
-                    f"on {day_of_week}? Would you just confirm once it's been sent?"
+                    f"on {day_of_week}? Please confirm once you've sent it."
                     f"\nGuest Email: {guest_email}"
                 )
                 send_text(BRYANT_PHONE, message)
