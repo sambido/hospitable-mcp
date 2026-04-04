@@ -325,20 +325,19 @@ def main():
         print(f"  {full_name}: {nights} nights, check-in {checkin} ({days_until} days away)")
         print(f"  Email: {guest_email or 'N/A'}")
 
-        # Day before at 11am PT: initial text to Bryant
+        # Day before at 11am PT: initial text to Bryant (only if we have email)
         if days_until == 1 and 10 <= current_hour <= 12:
-            message = (
-                f"Hey Bryant, the Airbnb guest {first_name} checking in on "
-                f"{checkin_friendly} is staying >5 nights so we've promised a perk. "
-                f"Can you send the $50 Sea Creatures gift card before 4pm check-in "
-                f"on {day_of_week}? Would you just confirm once it's been sent?"
-            )
-            if guest_email:
-                message += f"\nGuest Email: {guest_email}"
+            if not guest_email:
+                print(f"  No email yet for {full_name} — skipping text, will retry at 12pm day-of")
             else:
-                message += "\nGuest Email: not available yet"
-
-            send_text(BRYANT_PHONE, message)
+                message = (
+                    f"Hey Bryant, the Airbnb guest {first_name} checking in on "
+                    f"{checkin_friendly} is staying >5 nights so we've promised a perk. "
+                    f"Can you send the $50 Sea Creatures gift card before 4pm check-in "
+                    f"on {day_of_week}? Would you just confirm once it's been sent?"
+                    f"\nGuest Email: {guest_email}"
+                )
+                send_text(BRYANT_PHONE, message)
 
             if not action_item_exists(res_code):
                 create_gift_card_action_item(full_name, checkin, res_code, nights)
@@ -346,19 +345,32 @@ def main():
             else:
                 print(f"  Action item already exists")
 
-        # Day of at 12pm PT: follow-up only if Bryant hasn't replied
+        # Day of at 12pm PT: send if no email yesterday, or follow-up if no confirmation
         elif days_until == 0 and 11 <= current_hour <= 13:
-            has_replied = check_for_confirmation(BRYANT_PHONE, since_hours=26)
+            # Re-check email in case scraper caught it overnight
+            guest_email = get_guest_email(full_name)
 
-            if not has_replied:
+            has_confirmed = check_for_confirmation(BRYANT_PHONE, since_hours=26)
+
+            if has_confirmed:
+                print(f"  Bryant already confirmed, skipping follow-up")
+            elif not guest_email:
+                # Still no email — alert Sam, can't send gift card without it
+                message = (
+                    f"Heads up: {first_name} checks into #302 today (5+ nights) "
+                    f"but we still don't have their email for the Sea Creatures gift card. "
+                    f"Need to get it manually."
+                )
+                send_text(BRYANT_PHONE, message)
+                print(f"  No email available — sent alert")
+            else:
+                # Have email, no confirmation — send follow-up
                 message = (
                     "Hey Bryant, just confirming you've sent the gift card "
                     "to the guest. Let me know. Thanks!"
                 )
                 send_text(BRYANT_PHONE, message)
-                print(f"  Follow-up sent (no reply detected)")
-            else:
-                print(f"  Bryant already replied, skipping follow-up")
+                print(f"  Follow-up sent (no confirmation detected)")
 
         else:
             print(f"  No action needed right now ({days_until} days away, {current_hour}:00 PT)")
