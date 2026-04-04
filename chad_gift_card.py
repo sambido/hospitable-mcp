@@ -127,16 +127,24 @@ def send_text(to, message):
         return False
 
 
-def check_for_reply(from_phone, since_hours=24):
-    """Check if we received a reply from a phone number in the last N hours."""
+CONFIRMATION_KEYWORDS = [
+    "done", "sent", "yes", "confirmed", "will do", "on it",
+    "got it", "sure", "okay", "ok", "yep", "yup", "absolutely",
+    "of course", "no problem", "np", "taken care", "delivered",
+    "dropping", "dropped", "sending",
+]
+
+
+def check_for_confirmation(from_phone, since_hours=24):
+    """Check if we received a confirmation reply from a phone number."""
     if not QUO_API_KEY:
-        print(f"  [DRY RUN] Would check for reply from {from_phone}")
+        print(f"  [DRY RUN] Would check for confirmation from {from_phone}")
         return False
 
     api_key = QUO_API_KEY.strip()
 
     req = urllib.request.Request(
-        f"https://api.openphone.com/v1/messages?phoneNumberId={QUO_FROM}&participants={from_phone}&maxResults=5",
+        f"https://api.openphone.com/v1/messages?phoneNumberId={QUO_FROM}&participants={from_phone}&maxResults=10",
         headers={
             "Authorization": api_key,
             "Content-Type": "application/json",
@@ -150,12 +158,17 @@ def check_for_reply(from_phone, since_hours=24):
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).isoformat()
 
         for msg in messages:
-            # Look for incoming messages from Bryant after our outgoing text
-            if msg.get("direction") == "incoming" and msg.get("createdAt", "") > cutoff:
-                print(f"  Reply found from {from_phone}: \"{msg.get('content', '')[:80]}\"")
-                return True
+            if msg.get("direction") != "incoming" or msg.get("createdAt", "") <= cutoff:
+                continue
 
-        print(f"  No reply from {from_phone} in last {since_hours} hours")
+            content = (msg.get("content") or msg.get("text") or "").lower().strip()
+            if any(kw in content for kw in CONFIRMATION_KEYWORDS):
+                print(f"  Confirmation from {from_phone}: \"{msg.get('content', '')[:80]}\"")
+                return True
+            else:
+                print(f"  Reply from {from_phone} but not a confirmation: \"{msg.get('content', '')[:80]}\"")
+
+        print(f"  No confirmation from {from_phone} in last {since_hours} hours")
         return False
     except urllib.error.HTTPError as e:
         print(f"  Quo error checking replies: {e.code}")
@@ -335,7 +348,7 @@ def main():
 
         # Day of at 12pm PT: follow-up only if Bryant hasn't replied
         elif days_until == 0 and 11 <= current_hour <= 13:
-            has_replied = check_for_reply(BRYANT_PHONE, since_hours=26)
+            has_replied = check_for_confirmation(BRYANT_PHONE, since_hours=26)
 
             if not has_replied:
                 message = (
