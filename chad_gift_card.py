@@ -48,8 +48,8 @@ CHAD_PROPERTY_UUID = "eefb5918-5149-4b4e-bdd0-277754409cb0"
 CHAD_PROPERTY_NOTION_ID = "32050c17-99cc-8188-9bfd-f23a4cc8c028"
 MIN_NIGHTS = 5
 
-# Bryant (gift card coordinator)
-BRYANT_PHONE = "+12065025344"
+# Bryant (gift card coordinator) — currently set to Sam for testing
+BRYANT_PHONE = "+12537320947"  # TODO: switch to +12065025344 when ready to go live
 
 # Quo (OpenPhone)
 QUO_FROM = "PNI52JLEHJ"  # eSam Automations (206) 350-3726
