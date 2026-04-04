@@ -1,0 +1,29 @@
+name: Fix Orphan Gaps (Min-Stay)
+on:
+  schedule:
+    # 10am PT — after pricing calendar syncs
+    - cron: '0 17 * * *'
+    - cron: '0 18 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run orphan gap detector
+        env:
+          HOSPITABLE_PAT: ${{ secrets.HOSPITABLE_PAT }}
+          PRICELABS_API_KEY: ${{ secrets.PRICELABS_API_KEY }}
+        run: python fix_orphan_gaps.py
+      - name: Notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"Orphan gap detector failed. <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"}"
